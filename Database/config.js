@@ -7,7 +7,7 @@ const config = {
     database: 'financial_data'
   },
   postgresql: {
-    connectionString: 'postgresql://neondb_owner:npg_0jJAfrLxdRM7@ep-falling-union-a15mokzs-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'
+    connectionString: 'postgresql://postgres@localhost:5432/financial_data'
   },
   server: {
     port: process.env.PORT || 3000

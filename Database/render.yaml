@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: financial-etl-pipeline
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        value: mongodb+srv://abhishekmalyan2:STLKamQJJoUWv0Ks@database.tu83c8a.mongodb.net/
+      - key: MONGODB_DATABASE
+        value: financial_data_2025
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: financial-postgres-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: financial-postgres-db
+          property: port
+      - key: POSTGRES_DATABASE
+        fromDatabase:
+          name: financial-postgres-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: financial-postgres-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: financial-postgres-db
+          property: password
+    healthCheckPath: /health
+
+databases:
+  - name: financial-postgres-db
+    databaseName: financial_data
+    user: postgres

@@ -1808,6 +1808,15 @@ app.get('/api/postgresql/table-data/:tableName', async (req, res) => {
     }
 });
 
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        service: 'Financial ETL Pipeline'
+    });
+});
+
 app.listen(PORT, () => {
     console.log(`🔥 Complete ETL System running at http://localhost:${PORT}`);
     console.log(`✅ Features:`);

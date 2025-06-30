@@ -3,6 +3,7 @@ services:
     name: financial-etl-pipeline
     env: docker
     plan: starter
+    rootDir: Database
     dockerfilePath: ./Dockerfile
     envVars:
       - key: NODE_ENV

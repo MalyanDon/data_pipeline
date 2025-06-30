@@ -1,121 +1,120 @@
-# Ultimate Financial Data Dashboard
+# MongoDB Database Project
 
-A complete ETL pipeline for financial data management with real-time visualization and processing capabilities.
+A Node.js application with MongoDB Atlas connection using your credentials.
 
-## 🚀 Features
+## 📋 Prerequisites
 
-- **Complete ETL Pipeline**: Upload → Process → View → Manage
-- **Smart File Detection**: Automatically categorizes and processes different file types
-- **Real-time Data Visualization**: Interactive dashboard with live statistics
-- **PostgreSQL Integration**: Robust data storage and querying
-- **Multi-format Support**: CSV, Excel (XLSX/XLS) file processing
-- **Export Capabilities**: Download data as CSV
-- **Error-free Processing**: Handles null values and data type conversions
+- Node.js (v14 or higher)
+- npm or yarn
+- MongoDB Atlas account (already configured)
 
-## 📊 Supported Data Types
+## 🚀 Setup
 
-- **Custody Data**: AXIS, KOTAK, HDFC, Deutsche Bank, Trust PMS, Orbis
-- **Master Data**: Brokers, Clients, Distributors, Strategies
-- **Transaction Data**: Contract Notes, Cash/Stock Capital Flow, MF Allocations
-
-## 🛠 Installation
-
-1. **Clone the repository**
+1. **Install dependencies:**
    ```bash
-git clone https://github.com/MalyanDon/data_pipeline.git
-cd data_pipeline
-```
+   npm install
+   ```
 
-2. **Install dependencies**
+2. **Your MongoDB connection is already configured:**
+   - **Cluster:** database.tu83c8a.mongodb.net
+   - **Username:** abhishekmalyan2-username
+   - **Database:** mydatabase
+
+## 🔧 Available Scripts
+
+- `npm start` - Start the production server
+- `npm run dev` - Start the development server with nodemon
+- `node test-connection.js` - Test the MongoDB connection
+
+## 🧪 Testing the Connection
+
+Run the connection test to verify everything is working:
+
 ```bash
-npm install
+node test-connection.js
 ```
 
-3. **Setup PostgreSQL**
-- Install PostgreSQL
-- Create database: `financial_data`
-- Update credentials in `config.js` if needed
+This will:
+- Connect to your MongoDB Atlas database
+- Create a test user
+- Fetch all users
+- Clean up the test data
+- Disconnect
 
-## 🚀 Quick Start
+## 🚀 Starting the API Server
 
-1. **Start the dashboard**
+Start the Express API server:
+
 ```bash
 npm start
 ```
 
-2. **Access the dashboard**
-Open http://localhost:3000 in your browser
+The server will start on port 3000 and provide the following endpoints:
 
-3. **View your data**
-- Statistics are displayed immediately
-- Select tables from dropdown to view data
-- Export data as CSV
+## 📡 API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/` | API information and status |
+| GET | `/health` | Database connection health check |
+| GET | `/users` | Get all users |
+| POST | `/users` | Create a new user |
+| GET | `/users/:id` | Get user by ID |
+| PUT | `/users/:id` | Update user |
+| DELETE | `/users/:id` | Delete user |
+
+## 📝 API Usage Examples
+
+### Create a User
+```bash
+curl -X POST http://localhost:3000/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Abhishek Malyan",
+    "email": "abhishek@example.com",
+    "age": 25
+  }'
+```
+
+### Get All Users
+```bash
+curl http://localhost:3000/users
+```
+
+### Get Health Status
+```bash
+curl http://localhost:3000/health
+```
 
 ## 📁 Project Structure
 
 ```
-Database/
-├── ultimate-dashboard-fixed.js  # Main application
-├── package.json                 # Dependencies and scripts
-├── config.js                   # Database configuration
-├── README.md                   # This file
-├── .gitignore                  # Git ignore rules
-└── node_modules/               # Dependencies
+├── config.js              # MongoDB configuration
+├── database.js            # Database connection logic
+├── index.js               # Main Express application
+├── models/
+│   └── User.js            # User model schema
+├── test-connection.js     # Connection test script
+├── package.json           # Project dependencies
+└── README.md             # This file
 ```
 
-## 🎯 Usage
+## 🔒 Security Notes
 
-### Viewing Data
-1. Open http://localhost:3000
-2. View real-time statistics on the main page
-3. Select a table from the dropdown
-4. Click "Load Data" to view records
-5. Use "Export CSV" to download data
+- Your MongoDB credentials are stored in `config.js`
+- For production, consider using environment variables
+- Make sure to whitelist your IP address in MongoDB Atlas
 
-### Data Statistics
-Your current data includes:
-- **19,080+ Total Records**
-- **18,418 Custody Holdings**
-- **25 Distributors**
-- **18 Strategies**
-- **5 Brokers**
-- **2 Clients**
-- **1 MF Allocation**
+## 🛠 Customization
 
-## 🔧 Configuration
+You can modify:
+- Database name in `config.js`
+- User schema in `models/User.js`
+- Add new models in the `models/` directory
+- Add new API routes in `index.js`
 
-Update `config.js` for database settings:
-```javascript
-module.exports = {
-    postgresql: {
-        user: 'your_username',
-        host: 'localhost',
-        database: 'financial_data',
-        password: 'your_password',
-        port: 5432
-    }
-};
-```
+## 📊 MongoDB Atlas Dashboard
 
-## 📈 Data Processing
+You can monitor your database at: [MongoDB Atlas Dashboard](https://cloud.mongodb.com/)
 
-The system automatically:
-- Detects file types based on content
-- Routes data to appropriate tables
-- Handles data validation and cleaning
-- Provides error-free viewing experience
-
-## 🛡 Error Handling
-
-- Graceful handling of null/undefined values
-- Proper date formatting
-- SQL injection prevention
-- Clear error messages
-
-## 👨‍💻 Author
-
-**Abhishek Malyan**
-
-## 📄 License
-
-This project is licensed under the MIT License. 
+Your cluster: `database.tu83c8a.mongodb.net` 

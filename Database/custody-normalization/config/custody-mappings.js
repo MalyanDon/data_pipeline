@@ -60,7 +60,7 @@ const custodyMappings = {
   trustpms: {
     pattern: /End_Client_Holding.*TRUSTPMS/i,
     fileExtensions: ['.xls', '.xlsx'],
-    headerRow: 2,
+    headerRow: 1,
     sourceSystem: 'TRUSTPMS',
     fieldMappings: {
       client_reference: ['__EMPTY', 'Client Code'],

@@ -7,7 +7,7 @@ const config = {
     database: 'financial_data'
   },
   postgresql: {
-    connectionString: 'postgresql://postgres@localhost:5432/financial_data'
+    connectionString: 'postgresql://abhishekmalyan@localhost:5432/financial_data'
   },
   server: {
     port: process.env.PORT || 3000

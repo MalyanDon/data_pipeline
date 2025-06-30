@@ -2242,3 +2242,860 @@ async function startServer() {
 }
 
 startServer(); 
+      type: 'mongodb_raw_dump_complete',
+      mode: 'mongodb_raw_dump',
+      workflow: 'mongodb_to_postgresql',
+      ...response
+    });
+
+    console.log(`🎉 MongoDB raw dump completed successfully: ${validRecords} records stored. Ready for tier 2 processing.`);
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    
+    // Clean up files on error
+    if (req.files) {
+      req.files.forEach(file => {
+        try {
+          fs.unlinkSync(file.path);
+        } catch (cleanupError) {
+          console.warn(`Warning: Could not clean up file ${file.path}`);
+        }
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'MongoDB raw data dump failed',
+      error: error.message,
+      processingMode: 'MongoDB Raw Dump Failed',
+      note: 'Could not store raw data in MongoDB. Please fix MongoDB Atlas connection (IP whitelist, credentials, cluster status) and try again.',
+      requirement: 'MongoDB connection is REQUIRED for this workflow - no fallback available'
+    });
+  }
+});
+
+// MongoDB data preview API
+app.get('/api/mongodb/preview', async (req, res) => {
+  try {
+    if (!mongoConnected) {
+      const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>MongoDB Data Preview</title>
+          <style>
+              body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; text-align: center; }
+              .message { background: white; margin: 20px 0; padding: 40px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+          </style>
+      </head>
+      <body>
+          <div class="message">
+              <h1>🍃 MongoDB Preview</h1>
+              <p><strong>MongoDB not connected</strong></p>
+              <p>Upload custody files to process data and populate MongoDB collections.</p>
+              <p>The system will continue to work with PostgreSQL functionality.</p>
+          </div>
+      </body>
+      </html>`;
+      return res.send(html);
+    }
+
+    // Get data from both databases
+    const { MongoClient } = require('mongodb');
+    const mongoClient = new MongoClient(config.mongodb.uri, {
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
+      tls: true,
+      tlsAllowInvalidCertificates: true,
+      tlsAllowInvalidHostnames: true
+    });
+    
+    await mongoClient.connect();
+    console.log('✅ Connected to MongoDB for preview');
+    
+    const db2024 = mongoClient.db('financial_data_2024');
+    const db2025 = mongoClient.db('financial_data_2025');
+    
+    // Get collections from both databases
+    const collections2024 = await db2024.listCollections().toArray();
+    const collections2025 = await db2025.listCollections().toArray();
+    
+    const allCollections = [];
+    let totalRecords = 0;
+    
+    // Process 2024 collections
+    for (const col of collections2024) {
+      const collection = db2024.collection(col.name);
+      const count = await collection.countDocuments();
+      if (count > 0) {
+        const sampleDoc = await collection.findOne();
+        allCollections.push({
+          name: col.name,
+          database: 'financial_data_2024',
+          count: count,
+          sampleDoc: sampleDoc,
+          sourceType: getSourceTypeFromCollection(col.name),
+          lastUpdated: sampleDoc?._uploadTimestamp || sampleDoc?.created_at
+        });
+        totalRecords += count;
+      }
+    }
+    
+    // Process 2025 collections
+    for (const col of collections2025) {
+      const collection = db2025.collection(col.name);
+      const count = await collection.countDocuments();
+      if (count > 0) {
+        const sampleDoc = await collection.findOne();
+        allCollections.push({
+          name: col.name,
+          database: 'financial_data_2025',
+          count: count,
+          sampleDoc: sampleDoc,
+          sourceType: getSourceTypeFromCollection(col.name),
+          lastUpdated: sampleDoc?._uploadTimestamp || sampleDoc?.created_at
+        });
+        totalRecords += count;
+      }
+    }
+    
+    await mongoClient.close();
+
+    let html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>MongoDB Data Preview - Raw Data Storage</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; text-align: center; margin-bottom: 30px; }
+            .summary { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+            .stat-card { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+            .stat-number { font-size: 2em; font-weight: bold; }
+            .stat-label { font-size: 0.9em; opacity: 0.9; }
+            .collection { background: white; margin: 20px 0; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+            .collection h3 { color: #333; margin-top: 0; display: flex; justify-content: space-between; align-items: center; }
+            .badge { padding: 6px 12px; border-radius: 20px; color: white; font-size: 0.8em; font-weight: bold; }
+            .badge-master { background: #28a745; }
+            .badge-transaction { background: #007bff; }
+            .badge-custody { background: #ffc107; color: #000; }
+            .badge-unknown { background: #6c757d; }
+            .record-preview { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 15px; }
+            .record-field { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #eee; }
+            .record-field:last-child { border-bottom: none; }
+            .field-name { font-weight: bold; color: #495057; }
+            .field-value { color: #6c757d; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .database-section { margin-bottom: 40px; }
+            .database-header { background: #343a40; color: white; padding: 15px 25px; border-radius: 10px; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🍃 MongoDB Raw Data Storage</h1>
+            <p>Tier 1: Raw file dumps organized by collection type with timestamps</p>
+        </div>
+        
+        <div class="summary">
+            <h2>📊 MongoDB Data Summary</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">${allCollections.length}</div>
+                    <div class="stat-label">Total Collections</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${totalRecords.toLocaleString()}</div>
+                    <div class="stat-label">Total Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${[...new Set(allCollections.map(c => c.sourceType))].length}</div>
+                    <div class="stat-label">Data Types</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${allCollections.filter(c => c.database === 'financial_data_2025').length}</div>
+                    <div class="stat-label">2025 Collections</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Group collections by database
+    const collections2024Group = allCollections.filter(c => c.database === 'financial_data_2024');
+    const collections2025Group = allCollections.filter(c => c.database === 'financial_data_2025');
+
+    // Display 2025 collections first (most recent)
+    if (collections2025Group.length > 0) {
+      html += `
+        <div class="database-section">
+            <div class="database-header">
+                <h2>📅 Financial Data 2025 (${collections2025Group.length} collections, ${collections2025Group.reduce((sum, c) => sum + c.count, 0).toLocaleString()} records)</h2>
+        </div>
+      `;
+      
+      collections2025Group.forEach(collection => {
+        html += generateCollectionHTML(collection);
+      });
+      
+      html += `</div>`;
+    }
+
+    // Display 2024 collections
+    if (collections2024Group.length > 0) {
+      html += `
+        <div class="database-section">
+            <div class="database-header">
+                <h2>📅 Financial Data 2024 (${collections2024Group.length} collections, ${collections2024Group.reduce((sum, c) => sum + c.count, 0).toLocaleString()} records)</h2>
+            </div>
+      `;
+      
+      collections2024Group.forEach(collection => {
+        html += generateCollectionHTML(collection);
+      });
+      
+      html += `</div>`;
+    }
+
+    html += `
+        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #e7f3ff; border-radius: 10px;">
+            <h3>🔄 Processing Pipeline</h3>
+            <p><strong>Step 1:</strong> Files uploaded to MongoDB (✅ Complete)</p>
+            <p><strong>Step 2:</strong> Click "Start Multi-Threading" to process raw data into PostgreSQL tier 2 tables</p>
+        </div>
+    </body></html>`;
+    
+    res.send(html);
+
+  } catch (error) {
+    res.status(500).send(`
+      <html><body style="font-family: Arial; padding: 20px; text-align: center;">
+        <h2>❌ Error Loading MongoDB Data</h2>
+        <p>Error: ${error.message}</p>
+        <p>Please check MongoDB Atlas connection and try again.</p>
+      </body></html>
+    `);
+  }
+});
+
+// Helper function to generate collection HTML
+function generateCollectionHTML(collection) {
+  const badgeClass = getBadgeClass(collection.sourceType);
+  
+  return `
+    <div class="collection">
+        <h3>
+            ${collection.name}
+            <span class="badge ${badgeClass}">${collection.sourceType}</span>
+        </h3>
+        <p><strong>📊 Records:</strong> ${collection.count.toLocaleString()}</p>
+        <p><strong>🗄️ Database:</strong> ${collection.database}</p>
+        <p><strong>📅 Last Updated:</strong> ${collection.lastUpdated ? new Date(collection.lastUpdated).toLocaleString() : 'Unknown'}</p>
+        
+        <div class="record-preview">
+            <h4>📋 Sample Record Fields:</h4>
+            ${Object.entries(collection.sampleDoc || {}).slice(0, 8).map(([key, value]) => {
+              if (key.startsWith('_')) return ''; // Skip MongoDB internal fields
+              return `
+                <div class="record-field">
+                    <span class="field-name">${key}:</span>
+                    <span class="field-value">${typeof value === 'object' ? JSON.stringify(value).substring(0, 100) + '...' : String(value).substring(0, 100)}</span>
+                </div>
+              `;
+            }).join('')}
+        </div>
+    </div>
+  `;
+}
+
+// Helper function to get source type from collection name
+function getSourceTypeFromCollection(collectionName) {
+  const name = collectionName.toLowerCase();
+  if (name.includes('broker_master')) return 'Broker Master';
+  if (name.includes('client')) return 'Client Master';
+  if (name.includes('distributor')) return 'Distributor Master';
+  if (name.includes('strategy')) return 'Strategy Master';
+  if (name.includes('contract_notes')) return 'Contract Notes';
+  if (name.includes('cash_capital')) return 'Cash Capital Flow';
+  if (name.includes('stock_capital')) return 'Stock Capital Flow';
+  if (name.includes('mf_allocation')) return 'MF Allocations';
+  if (name.includes('custody')) return 'Custody Holdings';
+  return 'Unknown';
+}
+
+// Helper function to get badge class
+function getBadgeClass(sourceType) {
+  if (sourceType.includes('Master')) return 'badge-master';
+  if (sourceType.includes('Flow') || sourceType.includes('Contract') || sourceType.includes('Allocation')) return 'badge-transaction';
+  if (sourceType.includes('Custody')) return 'badge-custody';
+  return 'badge-unknown';
+}
+
+// PostgreSQL data preview API
+app.get('/api/postgresql/preview', async (req, res) => {
+  try {
+    const client = await pgPool.connect();
+    
+    // Get all tables with their schemas
+    const tablesQuery = `
+      SELECT 
+        t.table_name,
+        t.table_type,
+        COALESCE(s.record_count, 0) as record_count
+      FROM information_schema.tables t
+      LEFT JOIN (
+        SELECT 
+          schemaname,
+          tablename,
+          n_tup_ins as record_count
+        FROM pg_stat_user_tables
+      ) s ON t.table_name = s.tablename
+      WHERE t.table_schema = 'public' 
+      AND t.table_type = 'BASE TABLE'
+      ORDER BY t.table_name
+    `;
+    const tablesResult = await client.query(tablesQuery);
+    
+    let totalRecords = 0;
+    const tableDetails = [];
+    
+    // Get details for each table
+    for (const table of tablesResult.rows) {
+      const tableName = table.table_name;
+      
+      try {
+        // Get actual record count
+        const countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
+        const countResult = await client.query(countQuery);
+        const actualCount = parseInt(countResult.rows[0].total);
+        
+        // Get column information
+        const columnsQuery = `
+          SELECT column_name, data_type, is_nullable
+          FROM information_schema.columns
+          WHERE table_name = $1 AND table_schema = 'public'
+          ORDER BY ordinal_position
+        `;
+        const columnsResult = await client.query(columnsQuery, [tableName]);
+        
+        // Get sample data if table has records
+        let sampleData = [];
+        if (actualCount > 0) {
+          const sampleQuery = `SELECT * FROM ${tableName} LIMIT 3`;
+          const sampleResult = await client.query(sampleQuery);
+          sampleData = sampleResult.rows;
+        }
+        
+        tableDetails.push({
+          name: tableName,
+          type: getTableType(tableName),
+          recordCount: actualCount,
+          columns: columnsResult.rows,
+          sampleData: sampleData
+        });
+        
+        totalRecords += actualCount;
+        
+      } catch (error) {
+        console.error(`Error processing table ${tableName}:`, error.message);
+        tableDetails.push({
+          name: tableName,
+          type: 'Unknown',
+          recordCount: 0,
+          columns: [],
+          sampleData: [],
+          error: error.message
+        });
+      }
+    }
+    
+    // Generate HTML
+    let html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>PostgreSQL Data Preview - Normalized Tables</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 15px; text-align: center; margin-bottom: 30px; }
+            .summary { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); margin-bottom: 30px; }
+            .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+            .stat-card { background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }
+            .stat-number { font-size: 2em; font-weight: bold; }
+            .stat-label { font-size: 0.9em; opacity: 0.9; }
+            .table-section { background: white; margin: 20px 0; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+            .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+            .badge { padding: 6px 12px; border-radius: 20px; color: white; font-size: 0.8em; font-weight: bold; }
+            .badge-master { background: #28a745; }
+            .badge-transaction { background: #007bff; }
+            .badge-custody { background: #ffc107; color: #000; }
+            .badge-daily { background: #6f42c1; }
+            .badge-empty { background: #6c757d; }
+            .columns-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+            .column-card { background: #f8f9fa; padding: 15px; border-radius: 8px; }
+            .column-name { font-weight: bold; color: #495057; }
+            .column-type { color: #6c757d; font-size: 0.9em; }
+            .sample-data { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-top: 15px; overflow-x: auto; }
+            table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background: #e9ecef; font-weight: bold; }
+            .toggle-btn { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; margin-top: 10px; }
+            .toggle-btn:hover { background: #0056b3; }
+            .details { display: none; margin-top: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>🐘 PostgreSQL Normalized Data</h1>
+            <p>Tier 2: Processed and normalized tables with structured data</p>
+        </div>
+        
+        <div class="summary">
+            <h2>📊 PostgreSQL Data Summary</h2>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">${tableDetails.length}</div>
+                    <div class="stat-label">Total Tables</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${totalRecords.toLocaleString()}</div>
+                    <div class="stat-label">Total Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${tableDetails.filter(t => t.recordCount > 0).length}</div>
+                    <div class="stat-label">Active Tables</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">${[...new Set(tableDetails.map(t => t.type))].length}</div>
+                    <div class="stat-label">Table Types</div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // Group tables by type
+    const masterTables = tableDetails.filter(t => t.type === 'Master Data');
+    const transactionTables = tableDetails.filter(t => t.type === 'Transaction Data');
+    const custodyTables = tableDetails.filter(t => t.type === 'Custody Holdings');
+    const dailyTables = tableDetails.filter(t => t.type === 'Daily Tables');
+    const otherTables = tableDetails.filter(t => !['Master Data', 'Transaction Data', 'Custody Holdings', 'Daily Tables'].includes(t.type));
+
+    // Display tables by category
+    [
+      { title: '👥 Master Data Tables', tables: masterTables, color: 'master' },
+      { title: '💼 Transaction Data Tables', tables: transactionTables, color: 'transaction' },
+      { title: '🏦 Custody Holdings Tables', tables: custodyTables, color: 'custody' },
+      { title: '📅 Daily Partitioned Tables', tables: dailyTables, color: 'daily' },
+      { title: '📋 Other Tables', tables: otherTables, color: 'empty' }
+    ].forEach(category => {
+      if (category.tables.length > 0) {
+        html += `<h2 style="color: #495057; margin-top: 40px;">${category.title} (${category.tables.length})</h2>`;
+        
+        category.tables.forEach(table => {
+          html += generateTableHTML(table, category.color);
+        });
+      }
+    });
+      
+      html += `
+        <div style="text-align: center; margin-top: 40px; padding: 20px; background: #e7f3ff; border-radius: 10px;">
+            <h3>✅ Data Processing Complete</h3>
+            <p><strong>Raw MongoDB data has been successfully processed into structured PostgreSQL tables</strong></p>
+            <p>All tables are ready for analysis and reporting</p>
+        </div>
+        
+        <script>
+            function toggleDetails(btn, tableId) {
+                const details = document.getElementById(tableId);
+                if (details.style.display === 'none') {
+                    details.style.display = 'block';
+                    btn.textContent = 'Hide Details';
+                } else {
+                    details.style.display = 'none';
+                    btn.textContent = 'Show Details';
+                }
+            }
+        </script>
+    </body></html>`;
+    
+    client.release();
+    res.send(html);
+    
+  } catch (error) {
+    res.status(500).send(`
+      <html><body style="font-family: Arial; padding: 20px; text-align: center;">
+        <h2>❌ Error Loading PostgreSQL Data</h2>
+        <p>Error: ${error.message}</p>
+        <p>Please check PostgreSQL connection and try again.</p>
+      </body></html>
+    `);
+  }
+});
+
+// Helper function to generate table HTML
+function generateTableHTML(table, colorType) {
+  const tableId = `details-${table.name}`;
+  
+  return `
+    <div class="table-section">
+        <div class="table-header">
+            <h3>${table.name}</h3>
+            <span class="badge badge-${colorType}">${table.type} (${table.recordCount.toLocaleString()} records)</span>
+        </div>
+        
+        ${table.error ? `<div style="color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 5px;">❌ Error: ${table.error}</div>` : ''}
+        
+        <p><strong>📊 Record Count:</strong> ${table.recordCount.toLocaleString()}</p>
+        <p><strong>📋 Columns:</strong> ${table.columns.length}</p>
+        
+        <button class="toggle-btn" onclick="toggleDetails(this, '${tableId}')">Show Details</button>
+        
+        <div id="${tableId}" class="details">
+            <h4>📋 Table Schema:</h4>
+            <div class="columns-grid">
+                ${table.columns.map(col => `
+                    <div class="column-card">
+                        <div class="column-name">${col.column_name}</div>
+                        <div class="column-type">${col.data_type}${col.is_nullable === 'NO' ? ' (Required)' : ' (Optional)'}</div>
+                    </div>
+                `).join('')}
+            </div>
+            
+            ${table.sampleData.length > 0 ? `
+                <h4>📋 Sample Data:</h4>
+                <div class="sample-data">
+            <table>
+                <thead>
+                    <tr>
+                                ${table.columns.slice(0, 8).map(col => `<th>${col.column_name}</th>`).join('')}
+                    </tr>
+                </thead>
+                <tbody>
+                            ${table.sampleData.map(row => `
+                                <tr>
+                                    ${table.columns.slice(0, 8).map(col => `
+                                        <td>${row[col.column_name] !== null && row[col.column_name] !== undefined ? 
+                                            String(row[col.column_name]).substring(0, 50) + (String(row[col.column_name]).length > 50 ? '...' : '') : 
+                                            'NULL'}</td>
+                                    `).join('')}
+          </tr>
+                            `).join('')}
+                </tbody>
+            </table>
+                </div>
+            ` : '<p style="color: #6c757d; font-style: italic;">No sample data available (table is empty)</p>'}
+        </div>
+        </div>
+      `;
+    }
+    
+// Helper function to determine table type
+function getTableType(tableName) {
+  const name = tableName.toLowerCase();
+  if (name.includes('_2025_') || name.includes('_2024_')) return 'Daily Tables';
+  if (name.includes('brokers') || name.includes('clients') || name.includes('distributors') || name.includes('strategies')) return 'Master Data';
+  if (name.includes('contract_notes') || name.includes('capital_flow') || name.includes('allocations')) return 'Transaction Data';
+  if (name.includes('custody') || name.includes('holdings')) return 'Custody Holdings';
+  return 'Other';
+}
+
+// API routes
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'running',
+    timestamp: new Date().toISOString(),
+    features: ['multi-threading', 'real-time-progress', 'orbis-corrections', 'file-upload', 'smart-versioning']
+  });
+});
+
+// API route to get PostgreSQL data
+app.get('/api/postgresql-data', async (req, res) => {
+  try {
+    const client = await pgPool.connect();
+    
+    // Get list of daily tables
+    const tablesQuery = `
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_schema = 'public' 
+      AND table_name LIKE 'unified_custody_master_%'
+      ORDER BY table_name DESC
+    `;
+    const tablesResult = await client.query(tablesQuery);
+    
+    const tableStats = [];
+    
+    for (const table of tablesResult.rows.slice(0, 10)) { // Get latest 10 tables
+      const tableName = table.table_name;
+      
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as total_records,
+          COUNT(DISTINCT client_reference) as unique_clients,
+          COUNT(DISTINCT instrument_isin) as unique_instruments,
+          array_agg(DISTINCT source_system) as source_systems,
+          MAX(created_at) as last_updated
+        FROM ${tableName}
+      `;
+      
+      const statsResult = await client.query(statsQuery);
+      const stats = statsResult.rows[0];
+      
+      // Get sample records from each source system
+      const sampleQuery = `
+        WITH ranked_records AS (
+          SELECT *, 
+                 ROW_NUMBER() OVER (PARTITION BY source_system ORDER BY created_at DESC) as rn
+          FROM ${tableName}
+        )
+        SELECT client_reference, client_name, instrument_isin, instrument_name, 
+               source_system, record_date, created_at,
+               blocked_quantity, pending_buy_quantity, pending_sell_quantity,
+               total_position, saleable_quantity
+        FROM ranked_records 
+        WHERE rn <= 2
+        ORDER BY source_system, rn
+      `;
+      const sampleResult = await client.query(sampleQuery);
+      
+      tableStats.push({
+        tableName,
+        totalRecords: parseInt(stats.total_records),
+        uniqueClients: parseInt(stats.unique_clients),
+        uniqueInstruments: parseInt(stats.unique_instruments),
+        sourceSystems: stats.source_systems || [],
+        lastUpdated: stats.last_updated,
+        sampleRecords: sampleResult.rows
+      });
+    }
+    
+    client.release();
+    res.json({ success: true, tables: tableStats });
+    
+  } catch (error) {
+    console.error('Error fetching PostgreSQL data:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// API endpoint to get latest collections by type for processing
+app.get('/api/latest-collections', async (req, res) => {
+  try {
+    console.log('🔍 Finding latest collections by type for processing...');
+    
+    const { MongoClient } = require('mongodb');
+    const mongoClient = new MongoClient(config.mongodb.uri, {
+      serverSelectionTimeoutMS: 15000,
+      connectTimeoutMS: 15000,
+      tls: true,
+      tlsAllowInvalidCertificates: true,
+      tlsAllowInvalidHostnames: true
+    });
+    
+    await mongoClient.connect();
+    console.log('✅ Connected to MongoDB for latest collection discovery');
+    
+    const db2024 = mongoClient.db('financial_data_2024');
+    const db2025 = mongoClient.db('financial_data_2025');
+    
+    const latest2024 = await findLatestCollectionsByType(db2024);
+    const latest2025 = await findLatestCollectionsByType(db2025);
+    
+    // Combine and choose the absolute latest for each type
+    const allLatest = {};
+    
+    // Add 2024 collections
+    Object.entries(latest2024).forEach(([type, info]) => {
+      allLatest[type] = { ...info, database: 'financial_data_2024' };
+    });
+    
+    // Add 2025 collections (will override 2024 if timestamp is newer)
+    Object.entries(latest2025).forEach(([type, info]) => {
+      if (!allLatest[type] || info.timestamp > allLatest[type].timestamp) {
+        allLatest[type] = { ...info, database: 'financial_data_2025' };
+      }
+    });
+    
+    await mongoClient.close();
+    console.log(`✅ Found latest collections for ${Object.keys(allLatest).length} data types`);
+    
+    res.json({
+      success: true,
+      latestCollections: allLatest,
+      dataTypes: Object.keys(allLatest).length,
+      message: `Found latest collections for ${Object.keys(allLatest).length} data types`,
+      instruction: 'Use these collection names for processing the most recent data of each type'
+    });
+    
+  } catch (error) {
+    console.error('❌ Error finding latest collections:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to find latest collections',
+      details: error.message
+    });
+  }
+});
+
+// New unified data viewer API endpoint
+app.get('/api/unified-data-view', async (req, res) => {
+  try {
+    const mongoData = await getMongoDBSummary();
+    const postgresData = await getPostgreSQLSummary();
+    
+    res.json({
+      success: true,
+      mongodb: mongoData,
+      postgresql: postgresData,
+      summary: {
+        totalCollections: mongoData.totalCollections,
+        totalMongoRecords: mongoData.totalRecords,
+        totalPostgresRecords: postgresData.totalRecords,
+        totalTables: postgresData.totalTables,
+        combinedRecords: mongoData.totalRecords + postgresData.totalRecords
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: 'Failed to load unified data view',
+      details: error.message
+    });
+  }
+});
+
+// Helper function to get MongoDB summary
+async function getMongoDBSummary() {
+  if (!mongoConnected) {
+    return { totalCollections: 0, totalRecords: 0, collections: [] };
+  }
+  
+  const { MongoClient } = require('mongodb');
+  const mongoClient = new MongoClient(config.mongodb.uri, {
+    serverSelectionTimeoutMS: 15000,
+    connectTimeoutMS: 15000,
+    tls: true,
+    tlsAllowInvalidCertificates: true,
+    tlsAllowInvalidHostnames: true
+  });
+  
+  await mongoClient.connect();
+  
+  const db2024 = mongoClient.db('financial_data_2024');
+  const db2025 = mongoClient.db('financial_data_2025');
+  
+  const collections2024 = await db2024.listCollections().toArray();
+  const collections2025 = await db2025.listCollections().toArray();
+  
+  const allCollections = [];
+  let totalRecords = 0;
+  
+  // Process both databases
+  for (const col of collections2024) {
+    const collection = db2024.collection(col.name);
+    const count = await collection.countDocuments();
+    if (count > 0) {
+      allCollections.push({
+        name: col.name,
+        database: 'financial_data_2024',
+        count: count,
+        sourceType: getSourceTypeFromCollection(col.name)
+      });
+      totalRecords += count;
+    }
+  }
+  
+  for (const col of collections2025) {
+    const collection = db2025.collection(col.name);
+    const count = await collection.countDocuments();
+    if (count > 0) {
+      allCollections.push({
+        name: col.name,
+        database: 'financial_data_2025',
+        count: count,
+        sourceType: getSourceTypeFromCollection(col.name)
+      });
+      totalRecords += count;
+    }
+  }
+  
+  await mongoClient.close();
+  
+  return {
+    totalCollections: allCollections.length,
+    totalRecords: totalRecords,
+    collections: allCollections
+  };
+}
+
+// Helper function to get PostgreSQL summary
+async function getPostgreSQLSummary() {
+  if (!pgConnected) {
+    return { totalTables: 0, totalRecords: 0, tables: [] };
+  }
+  
+  const client = await pgPool.connect();
+  
+  const tablesQuery = `
+    SELECT table_name 
+    FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    AND table_type = 'BASE TABLE'
+    ORDER BY table_name
+  `;
+  const tablesResult = await client.query(tablesQuery);
+  
+  const tables = [];
+  let totalRecords = 0;
+  
+  for (const table of tablesResult.rows) {
+    const tableName = table.table_name;
+    
+    try {
+      const countQuery = `SELECT COUNT(*) as total FROM ${tableName}`;
+      const countResult = await client.query(countQuery);
+      const count = parseInt(countResult.rows[0].total);
+      
+      tables.push({
+        name: tableName,
+        count: count,
+        type: getTableType(tableName)
+      });
+      
+      totalRecords += count;
+    } catch (error) {
+      tables.push({
+        name: tableName,
+        count: 0,
+        type: 'Error',
+        error: error.message
+      });
+    }
+  }
+  
+  client.release();
+  
+  return {
+    totalTables: tables.length,
+    totalRecords: totalRecords,
+    tables: tables
+  };
+}
+
+// Start server
+async function startServer() {
+  try {
+    await initDB();
+    
+    server.listen(PORT, () => {
+      console.log(`🚀 Multi-Threaded Data Processing Dashboard running at http://localhost:${PORT}`);
+      console.log(`🎯 Features: File upload, real-time progress, WebSocket updates, true multi-threading`);
+      console.log(`⚡ Supports: .xlsx, .xls, .csv, .json, .txt, .xml files with smart processing`);
+    });
+    
+  } catch (error) {
+    console.error('❌ Server startup failed:', error.message);
+    process.exit(1);
+  }
+}
+
+startServer(); 

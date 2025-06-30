@@ -6,6 +6,8 @@ const fs = require('fs-extra');
 const XLSX = require('xlsx');
 const { Pool } = require('pg');
 const config = require('./config');
+const { MongoClient } = require('mongodb');
+const csv = require('csv-parser');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,35 +29,53 @@ let connections = new Map();
 let mongoConnected = false;
 
 // Configure multer for file uploads
-const upload = multer({ 
-    dest: 'temp_uploads/',
-    limits: { 
-        fileSize: 50 * 1024 * 1024,
-        files: 10
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const uploadDir = './temp_uploads';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
     },
+    filename: (req, file, cb) => {
+        const timestamp = Date.now();
+        const sanitized = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        cb(null, `${timestamp}_${sanitized}`);
+    }
+});
+
+const upload = multer({ 
+    storage: storage,
     fileFilter: (req, file, cb) => {
         const allowedTypes = ['.xlsx', '.xls', '.csv'];
-        const ext = path.extname(file.originalname).toLowerCase();
-        if (allowedTypes.includes(ext)) {
+        const fileExt = path.extname(file.originalname).toLowerCase();
+        if (allowedTypes.includes(fileExt)) {
             cb(null, true);
         } else {
-            cb(new Error('Only Excel (.xlsx, .xls) and CSV files are allowed'));
+            cb(new Error(`Invalid file type. Only ${allowedTypes.join(', ')} files are allowed.`), false);
         }
-    }
+    },
+    limits: { fileSize: 100 * 1024 * 1024, files: 1 }
 });
 
 // Middleware
 app.use(express.static('public'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+    if (req.method === 'OPTIONS') { res.sendStatus(200); } else { next(); }
+});
 
 // Error handling middleware for multer
 app.use((err, req, res, next) => {
     if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
-            return res.json({ success: false, error: 'File size too large (max 50MB)' });
+            return res.json({ success: false, error: 'File size too large (max 100MB)' });
         } else if (err.code === 'LIMIT_FILE_COUNT') {
-            return res.json({ success: false, error: 'Too many files (max 10)' });
+            return res.json({ success: false, error: 'Too many files (max 1)' });
         }
         return res.json({ success: false, error: err.message });
     } else if (err) {
@@ -151,6 +171,18 @@ function detectFileType(fileName) {
     return 'general_data';
 }
 
+// All data categories
+const DATA_CATEGORIES = {
+    custody_files: { displayName: 'Custody Files', subcategories: ['hdfc', 'axis', 'kotak', 'orbis', 'others'], icon: '🏛️', hasSubcategories: true },
+    stock_capital_flow: { displayName: 'Stock Capital Flow', subcategories: ['stock_capital_flow'], icon: '📊', hasSubcategories: false },
+    cash_capital_flow: { displayName: 'Cash Capital Flow', subcategories: ['cash_capital_flow'], icon: '💰', hasSubcategories: false },
+    distributor_master: { displayName: 'Distributor Master', subcategories: ['distributor_master'], icon: '🤝', hasSubcategories: false },
+    contract_notes: { displayName: 'Contract Notes', subcategories: ['contract_notes'], icon: '📋', hasSubcategories: false },
+    mf_allocations: { displayName: 'MF Allocations', subcategories: ['mf_allocations'], icon: '📈', hasSubcategories: false },
+    strategy_master: { displayName: 'Strategy Master', subcategories: ['strategy_master'], icon: '🎯', hasSubcategories: false },
+    client_info: { displayName: 'Client Info', subcategories: ['client_info'], icon: '👥', hasSubcategories: false },
+    trades: { displayName: 'Trades', subcategories: ['trades'], icon: '💹', hasSubcategories: false }
+};
 
 // Main dashboard route
 app.get('/', (req, res) => {
@@ -579,7 +611,7 @@ app.get('/', (req, res) => {
                     
                     container.innerHTML = \`
                         <div class="card" style="margin-top: 15px; background: #f8f9fa;">
-                            <h4>�� System Status</h4>
+                            <h4> System Status</h4>
                             <div class="status \${status.postgresql ? 'success' : 'error'}">
                                 PostgreSQL: \${status.postgresql ? '✅ Connected' : '❌ Disconnected'}
                             </div>
@@ -603,7 +635,6 @@ app.get('/', (req, res) => {
     </html>
     `);
 });
-
 
 // API Routes
 
@@ -685,99 +716,82 @@ app.get('/api/table-data/:table', async (req, res) => {
 });
 
 // File upload endpoint
-app.post('/api/upload', upload.array('files'), async (req, res) => {
+app.post('/api/upload', upload.single('files'), async (req, res) => {
     if (!mongoConnected) {
         return res.json({ success: false, error: 'MongoDB not connected' });
     }
 
     try {
-        const files = req.files;
+        const file = req.file;
         const uploadDate = req.body.uploadDate;
         
-        if (!files || files.length === 0) {
+        if (!file) {
             return res.json({ success: false, error: 'No files uploaded' });
         }
 
-        const uploadResults = [];
+        const fileType = detectFileType(file.originalname);
+        const dateObj = new Date(uploadDate);
+        const year = dateObj.getFullYear();
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+        const date = String(dateObj.getDate()).padStart(2, '0');
         
-        for (const file of files) {
-            try {
-                const fileType = detectFileType(file.originalname);
-                const dateObj = new Date(uploadDate);
-                const year = dateObj.getFullYear();
-                const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-                const date = String(dateObj.getDate()).padStart(2, '0');
-                
-                // Process file based on extension
-                let data = [];
-                const ext = path.extname(file.originalname).toLowerCase();
-                
-                if (ext === '.csv') {
-                    const csvData = fs.readFileSync(file.path, 'utf8');
-                    const lines = csvData.split('\n');
-                    const headers = lines[0].split(',').map(h => h.trim());
-                    
-                    for (let i = 1; i < lines.length; i++) {
-                        if (lines[i].trim()) {
-                            const values = lines[i].split(',');
-                            const record = {};
-                            headers.forEach((header, index) => {
-                                record[header] = values[index] ? values[index].trim() : '';
-                            });
-                            data.push(record);
-                        }
-                    }
-                } else if (['.xlsx', '.xls'].includes(ext)) {
-                    const workbook = XLSX.readFile(file.path);
-                    const sheetName = workbook.SheetNames[0];
-                    const worksheet = workbook.Sheets[sheetName];
-                    data = XLSX.utils.sheet_to_json(worksheet);
+        // Process file based on extension
+        let data = [];
+        const ext = path.extname(file.originalname).toLowerCase();
+        
+        if (ext === '.csv') {
+            const csvData = fs.readFileSync(file.path, 'utf8');
+            const lines = csvData.split('\n');
+            const headers = lines[0].split(',').map(h => h.trim());
+            
+            for (let i = 1; i < lines.length; i++) {
+                if (lines[i].trim()) {
+                    const values = lines[i].split(',');
+                    const record = {};
+                    headers.forEach((header, index) => {
+                        record[header] = values[index] ? values[index].trim() : '';
+                    });
+                    data.push(record);
                 }
-                
-                // Add metadata to each record
-                data = data.map(record => ({
-                    ...record,
-                    month,
-                    date,
-                    fullDate: uploadDate,
-                    fileName: file.originalname,
-                    fileType,
-                    uploadedAt: new Date()
-                }));
-                
-                // Save to MongoDB
-                const connection = await getYearConnection(year);
-                const collectionName = `${fileType}_${month}_${date}`;
-                const Model = connection.model(collectionName, FlexibleSchema, collectionName);
-                
-                await Model.insertMany(data);
-                
-                uploadResults.push({
-                    file: file.originalname,
-                    records: data.length,
-                    collection: collectionName,
-                    database: `financial_data_${year}`
-                });
-                
-                // Clean up temp file
-                fs.unlinkSync(file.path);
-                
-            } catch (error) {
-                console.error(`Error processing ${file.originalname}:`, error);
-                uploadResults.push({
-                    file: file.originalname,
-                    error: error.message
-                });
             }
+        } else if (['.xlsx', '.xls'].includes(ext)) {
+            const workbook = XLSX.readFile(file.path);
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            data = XLSX.utils.sheet_to_json(worksheet);
         }
         
-        const successCount = uploadResults.filter(r => !r.error).length;
-        const totalRecords = uploadResults.reduce((sum, r) => sum + (r.records || 0), 0);
+        // Add metadata to each record
+        data = data.map(record => ({
+            ...record,
+            month,
+            date,
+            fullDate: uploadDate,
+            fileName: file.originalname,
+            fileType,
+            uploadedAt: new Date()
+        }));
+        
+        // Save to MongoDB
+        const connection = await getYearConnection(year);
+        const collectionName = `${fileType}_${month}_${date}`;
+        const Model = connection.model(collectionName, FlexibleSchema, collectionName);
+        
+        await Model.insertMany(data);
+        
+        // Clean up temp file
+        fs.unlinkSync(file.path);
         
         res.json({
             success: true,
-            message: `Successfully processed ${successCount}/${files.length} files with ${totalRecords} total records`,
-            results: uploadResults
+            message: 'File uploaded successfully',
+            details: {
+                fileType: fileType,
+                fileName: file.originalname,
+                recordCount: data.length,
+                collectionName: collectionName,
+                database: `financial_data_${year}`
+            }
         });
         
     } catch (error) {

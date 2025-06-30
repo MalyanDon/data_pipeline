@@ -1818,3 +1818,5 @@ process.on('SIGINT', async () => {
 });
 
 startServer().catch(console.error); 
+
+startServer().catch(console.error); 

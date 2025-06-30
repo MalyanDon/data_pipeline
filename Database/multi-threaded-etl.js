@@ -603,3 +603,144 @@ if (require.main === module && isMainThread) {
     }
   })();
 } 
+      valid: validCount,
+      errors: errorCount,
+      collectionName: collection.collectionName,
+      custodyType: collection.custodyType
+    };
+
+  } catch (error) {
+    console.error(`❌ Worker ${workerId}: Failed to process ${collection.collectionName}:`, error.message);
+    throw error;
+  }
+}
+
+// Helper function to insert batch data into PostgreSQL
+async function insertBatchToPostgreSQL(pgPool, tableName, records, fileType) {
+  if (records.length === 0) return;
+
+  const client = await pgPool.connect();
+  
+  try {
+    const allColumns = Object.keys(records[0]);
+    
+    // Exclude auto-increment ID columns from INSERT
+    const excludeColumns = ['contract_id', 'stock_flow_id', 'strategy_id', 'broker_id', 'distributor_id', 'client_id'];
+    const columns = allColumns.filter(col => !excludeColumns.includes(col));
+    
+    const columnNames = columns.join(', ');
+    const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+    
+    // All data uses simple INSERT since it goes to date-based tables
+    const dataTypeLabel = ['broker_master', 'client_master', 'distributor_master', 'strategy_master'].includes(fileType) 
+      ? 'Master Data' : 'Transaction Data';
+    
+    console.log(`📅 ${dataTypeLabel}: Inserting ${records.length} records into ${tableName}`);
+    console.log(`🔧 Using columns: ${columnNames}`);
+    
+    const insertQuery = `
+      INSERT INTO ${tableName} (${columnNames})
+      VALUES (${placeholders})
+      ON CONFLICT DO NOTHING
+    `;
+    
+    // Insert each record
+    for (const record of records) {
+      const values = columns.map(col => record[col]);
+      await client.query(insertQuery, values);
+    }
+    
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to create date-based tables for ALL data types
+async function createDateBasedTable(pgPool, baseTableName, targetTableName) {
+  const client = await pgPool.connect();
+  
+  try {
+    // Check if table already exists
+    const checkQuery = `
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_name = $1
+      )
+    `;
+    const exists = await client.query(checkQuery, [targetTableName]);
+    
+    if (!exists.rows[0].exists) {
+      // Create date-based table using base table as template
+      const createTableQuery = `
+        CREATE TABLE ${targetTableName} (
+          LIKE ${baseTableName} INCLUDING ALL
+        )
+      `;
+      
+      await client.query(createTableQuery);
+      console.log(`📅 Created date-based table: ${targetTableName}`);
+    }
+    
+  } catch (error) {
+    console.error(`❌ Error creating date-based table ${targetTableName}:`, error.message);
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to create daily custody table (legacy - for custody data only)
+async function createDailyTable(pgPool, recordDate) {
+  const client = await pgPool.connect();
+  
+  try {
+    const dateStr = recordDate.toISOString().split('T')[0].replace(/-/g, '_');
+    const tableName = `unified_custody_master_${dateStr}`;
+    
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS ${tableName} (
+        LIKE unified_custody_master INCLUDING ALL
+      )
+    `;
+    
+    await client.query(createTableQuery);
+    console.log(`✅ Daily custody table ${tableName} created successfully`);
+    
+  } catch (error) {
+    console.error('❌ Error creating daily table:', error.message);
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { MultiThreadedETLProcessor };
+
+// CLI execution
+if (require.main === module && isMainThread) {
+  const { MultiThreadedETLProcessor } = require(__filename);
+  
+  (async () => {
+    const processor = new MultiThreadedETLProcessor();
+    
+    processor.on('start', (data) => {
+      console.log(`🎯 Started: ${data.totalCollections} collections, ${data.totalRecords} records, ${data.maxWorkers} workers`);
+    });
+
+    processor.on('progress', (data) => {
+      console.log(`📊 Worker ${data.workerId} | ${data.collectionName} (${data.custodyType}): ${data.collectionProgress.percentage}% | Overall: ${data.overallProgress.overallPercentage}%`);
+    });
+
+    processor.on('complete', (data) => {
+      console.log(`✅ Worker ${data.workerId} completed: ${data.collectionName} (${data.custodyType}) - ${data.result.valid}/${data.result.processed} valid`);
+    });
+
+    processor.on('finished', (summary) => {
+      console.log(`🎉 All processing complete! Success rate: ${summary.successRate}%`);
+    });
+
+    try {
+      await processor.processAllCollections();
+    } catch (error) {
+      console.error('💥 Processing failed:', error.message);
+    }
+  })();
+} 

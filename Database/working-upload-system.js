@@ -1100,18 +1100,18 @@ app.get('/', (req, res) => {
                     } else {
                         // Check if it's a PostgreSQL connection issue
                         if (result.details && result.details.includes('ECONNREFUSED')) {
-                            showStatus('mappingStatus', `
-                                <div style="text-align: left;">
-                                    <h4>🔗 PostgreSQL Database Not Available</h4>
-                                    <p style="margin: 10px 0;">PostgreSQL database needs to be set up on Render for ETL processing.</p>
-                                    <p style="margin: 10px 0;"><strong>Current Status:</strong></p>
-                                    <ul style="margin-left: 20px; margin: 10px 0;">
-                                        <li>✅ <strong>MongoDB</strong>: Working perfectly (18,454 records uploaded)</li>
-                                        <li>❌ <strong>PostgreSQL</strong>: Database connection failed</li>
-                                    </ul>
-                                    <p style="margin: 10px 0;"><strong>Your data is safe!</strong> All uploaded files are stored in MongoDB and ready for processing once PostgreSQL is available.</p>
-                                </div>
-                            `, 'error');
+                            showStatus('mappingStatus', 
+                                '<div style="text-align: left;">' +
+                                    '<h4>🔗 PostgreSQL Database Not Available</h4>' +
+                                    '<p style="margin: 10px 0;">PostgreSQL database needs to be set up on Render for ETL processing.</p>' +
+                                    '<p style="margin: 10px 0;"><strong>Current Status:</strong></p>' +
+                                    '<ul style="margin-left: 20px; margin: 10px 0;">' +
+                                        '<li>✅ <strong>MongoDB</strong>: Working perfectly (18,454 records uploaded)</li>' +
+                                        '<li>❌ <strong>PostgreSQL</strong>: Database connection failed</li>' +
+                                    '</ul>' +
+                                    '<p style="margin: 10px 0;"><strong>Your data is safe!</strong> All uploaded files are stored in MongoDB and ready for processing once PostgreSQL is available.</p>' +
+                                '</div>', 
+                                'error');
                         } else {
                             showStatus('mappingStatus', '❌ Processing failed: ' + result.error, 'error');
                         }
@@ -1123,7 +1123,7 @@ app.get('/', (req, res) => {
             
             function showStatus(elementId, message, type) {
                 const element = document.getElementById(elementId);
-                element.innerHTML = \`<div class="status \${type}">\${message}</div>\`;
+                element.innerHTML = '<div class="status ' + type + '">' + message + '</div>';
             }
             
             // PostgreSQL Viewer functionality

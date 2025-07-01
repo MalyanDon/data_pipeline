@@ -1,4 +1,4 @@
-# Use Node.js 18 LTS as base image
+# Financial ETL System Dockerfile - Updated 2025-07-01
 FROM node:18-alpine
 
 # Set working directory
@@ -10,7 +10,8 @@ RUN apk add --no-cache \
     py3-pip \
     make \
     g++ \
-    postgresql-client
+    postgresql-client \
+    curl
 
 # Copy package files first for better caching
 COPY package*.json ./
@@ -18,14 +19,16 @@ COPY package*.json ./
 # Install Node.js dependencies
 RUN npm install --production
 
-# Copy application files
-COPY . .
+# Copy all application files from Database directory
+COPY Database/ ./
 
-# Create temp uploads directory
-RUN mkdir -p temp_uploads
+# Create temp uploads directory and set proper ownership
+RUN mkdir -p temp_uploads && \
+    chown -R node:node /app && \
+    chmod -R 755 /app
 
-# Set proper permissions
-RUN chmod +x working-upload-system.js
+# Switch to non-root user
+USER node
 
 # Expose port
 EXPOSE 3000
@@ -34,5 +37,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
-# Start the application
+# Start the application - NO CHMOD NEEDED
 CMD ["node", "working-upload-system.js"] 

@@ -1,3 +1,4 @@
+# DEPLOYMENT FIX: Clean Dockerfile without chmod - Updated for Render
 # Use Node.js 18 LTS as base image
 FROM node:18-alpine
 

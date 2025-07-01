@@ -2,39 +2,10 @@
   "name": "mongodb-database-project",
   "version": "1.0.0",
   "description": "MongoDB categorized daily data dashboard",
-  "main": "ultimate-dashboard.js",
+  "main": "working-upload-system.js",
   "scripts": {
-    "start": "node ultimate-dashboard.js",
-    "start-all": "node start-all-services.js",
-    "dev": "node start-all-services.js",
-    "start-upload": "node clean-dashboard.js",
-    "dev-upload": "nodemon clean-dashboard.js",
-    "check": "node check-data.js",
-    "clear-all": "node clear-all-databases.js",
-    "setup-postgres": "node setup-postgresql.js",
-    "test-postgres": "node test-postgresql.js",
-    "analyze-postgres": "node analyze-postgres.js",
-    "custody-api": "node custody-api-server.js",
-    "custody-api-dev": "nodemon custody-api-server.js",
-    "custody-dashboard": "node pg-dashboard.js",
-    "beautiful-dashboard": "node beautiful-dashboard.js",
-    "unified-dashboard": "node unified-dashboard.js",
-    "all-services": "node start-all-services.js",
-    "quick-start": "node start-all-services.js",
-    "process-custody": "node scripts/process-custody-files.js",
-    "process-mongodb-custody": "node scripts/process-mongodb-custody.js",
-    "process-mongodb-direct": "node scripts/process-mongodb-direct.js",
-    "process-mongodb-parallel": "node scripts/parallel-mongodb-processor.js",
-    "process-mongodb-fast": "node scripts/fast-mongodb-processor.js",
-    "process-mongodb-simple": "node scripts/simple-mongodb-processor.js",
-    "migrate-financial-fields": "node scripts/migrate-financial-fields.js",
-    "test-financial-fields": "node scripts/test-financial-fields.js",
-    "reprocess-with-financial": "node scripts/reprocess-with-financial.js",
-    "test-custody": "node scripts/test-normalization.js",
-    "test-smart-processor": "node test-smart-processor.js",
-    "init-custody-db": "node scripts/process-custody-files.js --init-db",
-    "custody-stats": "node scripts/process-custody-files.js --stats",
-    "ultimate": "node ultimate-dashboard.js"
+    "start": "node working-upload-system.js",
+    "dev": "nodemon working-upload-system.js"
   },
   "dependencies": {
     "csv-parse": "^5.6.0",
@@ -60,10 +31,9 @@
     "database",
     "nodejs",
     "dashboard",
-    "categorized-data"
+    "etl"
   ],
   "author": "Abhishek Malyan",
   "license": "MIT"
 }
 
-}

@@ -599,6 +599,7 @@ app.get('/', (req, res) => {
                     <h2>🐘 PostgreSQL Viewer</h2>
                     
                     <button class="btn" onclick="loadPostgreSQLTables()">🔄 Refresh PostgreSQL Tables</button>
+                    <button class="btn danger" onclick="clearAllPostgreSQLTables()" style="margin-left: 10px;">🧹 Clear All Tables</button>
                     
                     <div id="postgresStatus"></div>
                     
@@ -1299,6 +1300,36 @@ app.get('/', (req, res) => {
                 
                 container.innerHTML = tableHTML;
             }
+            
+            // Clear all PostgreSQL tables function
+            async function clearAllPostgreSQLTables() {
+                if (!confirm('⚠️ This will permanently delete ALL PostgreSQL tables and data. Are you sure?')) {
+                    return;
+                }
+                
+                try {
+                    showStatus('postgresStatus', 'Clearing all PostgreSQL tables...', 'info');
+                    
+                    const response = await fetch('/api/postgresql/clear-all', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        showStatus('postgresStatus', `✅ Successfully cleared ${result.clearedTables.length} PostgreSQL tables. All data has been removed.`, 'success');
+                        // Clear the tables container
+                        document.getElementById('postgresTablesContainer').innerHTML = '<p>No PostgreSQL tables found. Create some tables using the ETL mapping first.</p>';
+                    } else {
+                        showStatus('postgresStatus', `❌ Error clearing tables: ${result.error}`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('postgresStatus', `❌ Error: ${error.message}`, 'error');
+                }
+            }
         </script>
     </body>
     </html>
@@ -1910,5 +1941,56 @@ app.listen(PORT, () => {
     console.log(`   👁️ Data viewer tab to see uploaded data`);
     console.log(`   🎯 Table selection and column mapping`);
     console.log(`   📊 MongoDB to PostgreSQL processing`);
+});
+
+// Clear all PostgreSQL data endpoint
+app.post('/api/postgresql/clear-all', async (req, res) => {
+    try {
+        const pgPool = new Pool(config.postgresql);
+        
+        try {
+            console.log('🧹 Clearing all PostgreSQL tables...');
+            
+            // Get all user tables in public schema
+            const tablesResult = await pgPool.query(`
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+            `);
+            
+            const tablesToClear = tablesResult.rows.map(row => row.table_name);
+            console.log('📋 Tables to clear:', tablesToClear);
+            
+            // Clear each table
+            for (const tableName of tablesToClear) {
+                try {
+                    // Use DROP TABLE instead of TRUNCATE for complete removal
+                    await pgPool.query(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+                    console.log(`✅ Dropped table: ${tableName}`);
+                } catch (error) {
+                    console.error(`❌ Error dropping ${tableName}:`, error.message);
+                }
+            }
+            
+            res.json({
+                success: true,
+                message: `Successfully cleared ${tablesToClear.length} PostgreSQL tables`,
+                clearedTables: tablesToClear
+            });
+            
+        } finally {
+            await pgPool.end();
+        }
+        
+    } catch (error) {
+        console.error('Error clearing PostgreSQL tables:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to clear PostgreSQL tables', 
+            details: error.message 
+        });
+    }
 });
  

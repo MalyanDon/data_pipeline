@@ -39,3 +39,4 @@ databases:
   - name: financial-postgres-db
     databaseName: financial_data
     user: postgres
+ 

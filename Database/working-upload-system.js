@@ -1826,3 +1826,4 @@ app.listen(PORT, () => {
     console.log(`   🎯 Table selection and column mapping`);
     console.log(`   📊 MongoDB to PostgreSQL processing`);
 });
+ 

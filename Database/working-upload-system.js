@@ -924,28 +924,26 @@ app.get('/', (req, res) => {
                         const name = fileName.substring(0, lastDotIndex);
                         const extension = fileName.substring(lastDotIndex);
                         
-                        // If name is too long, truncate it intelligently
-                        if (name.length > 25) {
-                            const truncated = name.substring(0, 22) + '...';
+                        // If name is too long, truncate it more aggressively for ORBIS
+                        if (name.length > 18) {
+                            const truncated = name.substring(0, 15) + '...';
                             return truncated + extension;
                         }
                         return fileName;
                     };
                     
-                    card.innerHTML = \`
-                        <h4>\${table.icon} \${table.displayName}</h4>
-                        <p><strong>Records:</strong> <span class="record-badge">\${table.recordCount.toLocaleString()}</span></p>
-                        <p><strong>Date:</strong> \${table.date}</p>
-                        <div class="file-name-container" title="\${table.fileName}">
-                            <strong>📁 File:</strong><br>
-                            <span class="file-name">\${formatFileName(table.fileName)}</span>
-                        </div>
-                        <p><strong>Columns:</strong> \${table.columns.length}</p>
-                        <div class="columns-preview">
-                            <strong>Available Columns:</strong><br>
-                            \${table.columns.slice(0, 4).join(', ')}\${table.columns.length > 4 ? ' +' + (table.columns.length - 4) + ' more...' : ''}
-                        </div>
-                    \`;
+                    card.innerHTML = '<h4>' + table.icon + ' ' + table.displayName + '</h4>' +
+                        '<p><strong>Records:</strong> <span class="record-badge">' + table.recordCount.toLocaleString() + '</span></p>' +
+                        '<p><strong>Date:</strong> ' + table.date + '</p>' +
+                        '<div class="file-name-container" title="' + table.fileName + '">' +
+                            '<strong>📁 File:</strong><br>' +
+                            '<span class="file-name">' + formatFileName(table.fileName) + '</span>' +
+                        '</div>' +
+                        '<p><strong>Columns:</strong> ' + table.columns.length + '</p>' +
+                        '<div class="columns-preview">' +
+                            '<strong>Available Columns:</strong><br>' +
+                            table.columns.slice(0, 4).join(', ') + (table.columns.length > 4 ? ' +' + (table.columns.length - 4) + ' more...' : '') +
+                        '</div>';
                     
                     container.appendChild(card);
                 });

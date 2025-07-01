@@ -474,13 +474,14 @@ app.get('/', (req, res) => {
             .btn:disabled { background: #6c757d; cursor: not-allowed; }
             .btn.danger { background: #dc3545; }
             .btn.danger:hover { background: #c82333; }
-            .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 15px; margin: 20px 0; }
-            .table-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; overflow: hidden; position: relative; }
+            .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 15px; margin: 20px 0; }
+            .table-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; overflow: hidden; position: relative; min-height: 200px; }
             .table-card:hover { background: #e9ecef; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
             .table-card.selected { background: #e3f2fd; border-color: #667eea; box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2); }
             .table-card h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
             .table-card p { margin: 5px 0; font-size: 14px; color: #666; }
-            .table-card .file-name { font-size: 12px; color: #888; word-break: break-all; overflow-wrap: break-word; max-width: 100%; }
+            .table-card .file-name { font-size: 11px; color: #888; word-break: break-word; overflow-wrap: anywhere; max-width: 100%; line-height: 1.3; display: block; margin: 8px 0; }
+            .table-card .file-name-container { background: #f8f9fb; padding: 6px 8px; border-radius: 4px; border-left: 3px solid #667eea; margin: 8px 0; }
             .table-card .columns-preview { margin-top: 10px; padding: 8px; background: #f0f4ff; border-radius: 4px; font-size: 11px; color: #667eea; }
             .record-badge { background: #667eea; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; display: inline-block; margin-left: 5px; }
             .mapping-section { margin: 20px 0; }
@@ -547,7 +548,7 @@ app.get('/', (req, res) => {
                 
                 <!-- Data Viewer Tab -->
                 <div id="viewerTab" class="tab-content hidden">
-                    <h2>👁️ Data Viewer</h2>
+                    <h2>��️ Data Viewer</h2>
                     
                     <button class="btn" onclick="loadDataViewer()">🔄 Refresh Data</button>
                     
@@ -916,23 +917,29 @@ app.get('/', (req, res) => {
                     card.className = 'table-card';
                     card.onclick = () => toggleTableSelection(id, card);
                     
-                    // Helper function to truncate filename
-                    const truncateFileName = (fileName, maxLength = 30) => {
-                        if (fileName.length <= maxLength) return fileName;
-                        const extension = fileName.split('.').pop();
-                        const name = fileName.substring(0, fileName.lastIndexOf('.'));
-                        const truncatedName = name.substring(0, maxLength - extension.length - 4) + '...';
-                        return `${truncatedName}.${extension}`;
+                    // Helper function to format filename better
+                    const formatFileName = (fileName) => {
+                        // Split filename into name and extension
+                        const lastDotIndex = fileName.lastIndexOf('.');
+                        const name = fileName.substring(0, lastDotIndex);
+                        const extension = fileName.substring(lastDotIndex);
+                        
+                        // If name is too long, truncate it intelligently
+                        if (name.length > 25) {
+                            const truncated = name.substring(0, 22) + '...';
+                            return truncated + extension;
+                        }
+                        return fileName;
                     };
                     
                     card.innerHTML = \`
                         <h4>\${table.icon} \${table.displayName}</h4>
                         <p><strong>Records:</strong> <span class="record-badge">\${table.recordCount.toLocaleString()}</span></p>
                         <p><strong>Date:</strong> \${table.date}</p>
-                        <p class="file-name" title="\${table.fileName}">
-                            <strong>File:</strong><br>
-                            \${truncateFileName(table.fileName)}
-                        </p>
+                        <div class="file-name-container" title="\${table.fileName}">
+                            <strong>📁 File:</strong><br>
+                            <span class="file-name">\${formatFileName(table.fileName)}</span>
+                        </div>
                         <p><strong>Columns:</strong> \${table.columns.length}</p>
                         <div class="columns-preview">
                             <strong>Available Columns:</strong><br>

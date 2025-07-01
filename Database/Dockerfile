@@ -18,14 +18,11 @@ COPY Database/package*.json ./
 # Install Node.js dependencies
 RUN npm install --production
 
-# Copy application files from Database directory
-COPY Database/ .
+# Copy all application files from Database directory
+COPY Database/ ./
 
 # Create temp uploads directory
 RUN mkdir -p temp_uploads
-
-# Set proper permissions
-RUN chmod +x working-upload-system.js
 
 # Expose port
 EXPOSE 3000

@@ -8,19 +8,23 @@ const config = {
   },
   postgresql: process.env.NODE_ENV === 'production' 
     ? {
-        host: process.env.POSTGRES_HOST,
-        port: process.env.POSTGRES_PORT || 5432,
-        database: process.env.POSTGRES_DATABASE,
-        user: process.env.POSTGRES_USER,
-        password: process.env.POSTGRES_PASSWORD,
-        ssl: true
+        host: process.env.POSTGRES_HOST || 'localhost',
+        port: parseInt(process.env.POSTGRES_PORT) || 5432,
+        database: process.env.POSTGRES_DATABASE || 'financial_data',
+        user: process.env.POSTGRES_USER || 'postgres',
+        password: process.env.POSTGRES_PASSWORD || '',
+        ssl: process.env.POSTGRES_HOST ? { rejectUnauthorized: false } : false,
+        connectionTimeoutMillis: 30000,
+        idleTimeoutMillis: 30000,
+        max: 20
       }
     : {
         host: 'localhost',
         port: 5432,
         database: 'financial_data',
         user: 'abhishekmalyan',
-        password: ''
+        password: '',
+        ssl: false
       },
   server: {
     port: process.env.PORT || 3000

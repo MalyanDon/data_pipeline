@@ -13,13 +13,13 @@ RUN apk add --no-cache \
     postgresql-client
 
 # Copy package files first for better caching
-COPY package*.json ./
+COPY Database/package*.json ./
 
 # Install Node.js dependencies
 RUN npm install --production
 
-# Copy application files
-COPY . .
+# Copy application files from Database directory
+COPY Database/ .
 
 # Create temp uploads directory
 RUN mkdir -p temp_uploads

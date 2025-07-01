@@ -1,27 +1,34 @@
-# Clean Dockerfile for ETL Data Pipeline - NO CHMOD NEEDED
+# ===================================================
+# ETL DATA PIPELINE DOCKERFILE - RENDER DEPLOYMENT
+# NO CHMOD COMMANDS - JavaScript files don't need it
+# ===================================================
+
 FROM node:18-alpine
 
+# Set up working environment
 WORKDIR /app
 
-# Install system dependencies
-RUN apk add --no-cache python3 py3-pip make g++ postgresql-client
+# Install all system dependencies in one layer
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    make \
+    g++ \
+    postgresql-client
 
-# Copy package files and install dependencies
+# Copy and install Node.js dependencies
 COPY package*.json ./
-RUN npm install --production
+RUN npm install --production && npm cache clean --force
 
-# Copy all application files
+# Copy the complete application
 COPY . .
 
-# Create upload directory
+# Ensure upload directory exists
 RUN mkdir -p temp_uploads
 
-# Expose the application port
+# Application runs on port 3000
 EXPOSE 3000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
-
-# Start the ETL application
+# NO CHMOD NEEDED FOR JAVASCRIPT FILES
+# Start the ETL data pipeline
 CMD ["node", "working-upload-system.js"] 

@@ -474,10 +474,15 @@ app.get('/', (req, res) => {
             .btn:disabled { background: #6c757d; cursor: not-allowed; }
             .btn.danger { background: #dc3545; }
             .btn.danger:hover { background: #c82333; }
-            .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
-            .table-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; }
-            .table-card:hover { background: #e9ecef; }
-            .table-card.selected { background: #e3f2fd; border-color: #667eea; }
+            .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 15px; margin: 20px 0; }
+            .table-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; overflow: hidden; position: relative; }
+            .table-card:hover { background: #e9ecef; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+            .table-card.selected { background: #e3f2fd; border-color: #667eea; box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2); }
+            .table-card h4 { margin: 0 0 10px 0; font-size: 16px; color: #333; }
+            .table-card p { margin: 5px 0; font-size: 14px; color: #666; }
+            .table-card .file-name { font-size: 12px; color: #888; word-break: break-all; overflow-wrap: break-word; max-width: 100%; }
+            .table-card .columns-preview { margin-top: 10px; padding: 8px; background: #f0f4ff; border-radius: 4px; font-size: 11px; color: #667eea; }
+            .record-badge { background: #667eea; color: white; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: bold; display: inline-block; margin-left: 5px; }
             .mapping-section { margin: 20px 0; }
             .column-mapping { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; }
             .form-group { margin: 15px 0; }
@@ -910,15 +915,27 @@ app.get('/', (req, res) => {
                     card.className = 'table-card';
                     card.onclick = () => toggleTableSelection(id, card);
                     
+                    // Helper function to truncate filename
+                    const truncateFileName = (fileName, maxLength = 30) => {
+                        if (fileName.length <= maxLength) return fileName;
+                        const extension = fileName.split('.').pop();
+                        const name = fileName.substring(0, fileName.lastIndexOf('.'));
+                        const truncatedName = name.substring(0, maxLength - extension.length - 4) + '...';
+                        return `${truncatedName}.${extension}`;
+                    };
+                    
                     card.innerHTML = \`
                         <h4>\${table.icon} \${table.displayName}</h4>
-                        <p><strong>Records:</strong> \${table.recordCount}</p>
+                        <p><strong>Records:</strong> <span class="record-badge">\${table.recordCount.toLocaleString()}</span></p>
                         <p><strong>Date:</strong> \${table.date}</p>
-                        <p><strong>File:</strong> \${table.fileName}</p>
+                        <p class="file-name" title="\${table.fileName}">
+                            <strong>File:</strong><br>
+                            \${truncateFileName(table.fileName)}
+                        </p>
                         <p><strong>Columns:</strong> \${table.columns.length}</p>
-                        <div style="margin-top: 10px; font-size: 12px; color: #666;">
+                        <div class="columns-preview">
                             <strong>Available Columns:</strong><br>
-                            \${table.columns.slice(0, 5).join(', ')}\${table.columns.length > 5 ? '...' : ''}
+                            \${table.columns.slice(0, 4).join(', ')}\${table.columns.length > 4 ? ' +' + (table.columns.length - 4) + ' more...' : ''}
                         </div>
                     \`;
                     
@@ -1099,7 +1116,25 @@ app.get('/', (req, res) => {
                         renderPostgreSQLTables(data.tables);
                         showStatus('postgresStatus', \`✅ Found \${data.tables.length} PostgreSQL tables\`, 'success');
                     } else {
-                        showStatus('postgresStatus', \`❌ Error loading tables: \${data.error}\`, 'error');
+                        // Check if it's a connection issue
+                        if (data.details && data.details.includes('ECONNREFUSED')) {
+                            showStatus('postgresStatus', \`
+                                <div style="text-align: left;">
+                                    <h4>📋 No PostgreSQL Tables Found</h4>
+                                    <p style="margin: 10px 0;">PostgreSQL tables are created automatically when you use the <strong>ETL Mapping</strong> feature.</p>
+                                    <p style="margin: 10px 0;"><strong>To create PostgreSQL tables:</strong></p>
+                                    <ol style="margin-left: 20px; margin: 10px 0;">
+                                        <li>Go to the <strong>🔄 ETL Mapping</strong> tab</li>
+                                        <li>Select custody files you want to process</li>
+                                        <li>Create column mappings (e.g., "Client_Code", "ISIN", "Holdings")</li>
+                                        <li>Click <strong>🚀 Process to PostgreSQL</strong></li>
+                                    </ol>
+                                    <p style="margin: 10px 0;">✨ This will create structured tables from your MongoDB data!</p>
+                                </div>
+                            \`, 'info');
+                        } else {
+                            showStatus('postgresStatus', \`❌ Error loading tables: \${data.error}\`, 'error');
+                        }
                     }
                 } catch (error) {
                     showStatus('postgresStatus', \`❌ Error: \${error.message}\`, 'error');

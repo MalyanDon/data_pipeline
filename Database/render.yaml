@@ -10,7 +10,7 @@ services:
       - key: PORT
         value: 3000
       - key: MONGODB_URI
-        value: mongodb+srv://abhishekmalyan2:STLKamQJJoUWv0Ks@database.tu83c8a.mongodb.net/
+        value: mongodb+srv://abhishekmalyan2:STLKamQJJoUWv0Ks@database.tu83c8a.mongodb.net/?retryWrites=true&w=majority&appName=RenderApp&ssl=true&authSource=admin
       - key: MONGODB_DATABASE
         value: financial_data_2025
       - key: POSTGRES_HOST

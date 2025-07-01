@@ -1333,7 +1333,15 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
         }));
         
         // MongoDB operations
-        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        const client = new MongoClient(mongoUri, { 
+            maxPoolSize: 10, 
+            serverSelectionTimeoutMS: 30000,
+            connectTimeoutMS: 30000,
+            socketTimeoutMS: 30000,
+            retryWrites: true,
+            ssl: true,
+            tlsAllowInvalidCertificates: true
+        });
         await client.connect();
         
         try {
@@ -1815,6 +1823,48 @@ app.get('/health', (req, res) => {
         timestamp: new Date().toISOString(),
         service: 'Financial ETL Pipeline'
     });
+});
+
+// MongoDB connection test endpoint
+app.get('/test-mongo', async (req, res) => {
+    try {
+        console.log('🔍 Testing MongoDB connection...');
+        const client = new MongoClient(mongoUri, { 
+            maxPoolSize: 10, 
+            serverSelectionTimeoutMS: 30000,
+            connectTimeoutMS: 30000,
+            socketTimeoutMS: 30000,
+            retryWrites: true,
+            ssl: true,
+            tlsAllowInvalidCertificates: true
+        });
+        
+        await client.connect();
+        console.log('✅ MongoDB connected');
+        
+        const db = client.db(config.mongodb.database);
+        await db.collection('test').insertOne({ test: 'connection', timestamp: new Date() });
+        await db.collection('test').deleteOne({ test: 'connection' });
+        
+        await client.close();
+        console.log('✅ MongoDB test completed');
+        
+        res.status(200).json({ 
+            status: 'success', 
+            message: 'MongoDB connection working',
+            database: config.mongodb.database,
+            timestamp: new Date().toISOString()
+        });
+        
+    } catch (error) {
+        console.error('❌ MongoDB test failed:', error.message);
+        res.status(500).json({ 
+            status: 'error', 
+            message: 'MongoDB connection failed',
+            error: error.message,
+            timestamp: new Date().toISOString()
+        });
+    }
 });
 
 app.listen(PORT, () => {

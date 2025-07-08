@@ -95,14 +95,80 @@ function extractDateFromFilename(filename) {
     }
 }
 
-async function processCSVFile(filePath) {
+// Add this function after cleanupColumnName function
+function isVerticalFormatCategory(category, subcategory) {
+    const verticalCategories = [
+        'client_info',
+        'distributor_master',
+        'broker_master',
+        'strategy_master'
+    ];
+    return verticalCategories.includes(category);
+}
+
+async function processVerticalFormatFile(filePath) {
     try {
         const csvData = fs.readFileSync(filePath, 'utf8');
         const { parse } = require('csv-parse/sync');
         
-        // First, let's try simple CSV parsing
-        console.log('📁 CSV file content preview (first 500 chars):');
-        console.log(csvData.substring(0, 500));
+        // Parse all rows
+        const rows = parse(csvData, {
+            skip_empty_lines: false, // Don't skip empty lines to preserve structure
+            trim: true
+        });
+
+        console.log('🔄 Processing vertical format file...');
+        console.log(`📊 Total rows found: ${rows.length}`);
+        
+        // Debug: Show first 10 rows
+        console.log('📋 First 10 rows preview:');
+        rows.slice(0, 10).forEach((row, index) => {
+            console.log(`   Row ${index + 1}: [${row.join(' | ')}] (${row.length} columns)`);
+        });
+        
+        const record = {};
+        let fieldsProcessed = 0;
+        
+        rows.forEach((row, index) => {
+            if (row && row.length >= 1) {
+                const fieldName = cleanupColumnName(row[0]);
+                if (fieldName && fieldName.trim() !== '') {
+                    // Take all remaining columns as potential values
+                    const values = row.slice(1).filter(val => val !== '' && val !== null && val !== undefined);
+                    
+                    // Always add the field, even if no values
+                    if (values.length === 0) {
+                        record[fieldName] = 'N/A';
+                        fieldsProcessed++;
+                        console.log(`   ✅ Field ${fieldsProcessed}: "${fieldName}" = "N/A" (no value)`);
+                    } else {
+                        record[fieldName] = values.length === 1 ? values[0] : values.join(' ');
+                        fieldsProcessed++;
+                        console.log(`   ✅ Field ${fieldsProcessed}: "${fieldName}" = "${record[fieldName]}"`);
+                    }
+                }
+            }
+        });
+        
+        console.log(`📊 Total fields processed: ${fieldsProcessed}`);
+        console.log(`📋 Final record keys: ${Object.keys(record).join(', ')}`);
+        
+        if (Object.keys(record).length === 0) {
+            console.log('⚠️ No fields found, falling back to horizontal format processing');
+            return await processHorizontalFormatFile(filePath);
+        }
+        
+        return [record]; // Return as array to maintain consistency with horizontal format
+    } catch (error) {
+        console.error('❌ Error processing vertical format file:', error);
+        throw error;
+    }
+}
+
+async function processHorizontalFormatFile(filePath) {
+    try {
+        const csvData = fs.readFileSync(filePath, 'utf8');
+        const { parse } = require('csv-parse/sync');
         
         // Smart CSV header detection - try different starting rows
         let bestData = [];
@@ -148,147 +214,174 @@ async function processCSVFile(filePath) {
             }
         }
         
-        // If no good headers found, try fallback approach
-        if (bestScore < 10) {
-            console.log('🔄 No good headers found, trying fallback approach...');
-            try {
-                const fallbackRecords = parse(csvData, {
-                    columns: false,
-                    skip_empty_lines: true,
-                    trim: true
-                });
-                
-                // Look for a row that looks like headers
-                for (let i = 0; i < Math.min(fallbackRecords.length, 20); i++) {
-                    const row = fallbackRecords[i];
-                    if (row.length > 3) {
-                        const score = calculateHeaderScore(row);
-                        console.log(`📊 Fallback row ${i + 1}: ${row.length} columns, score: ${score}`);
-                        console.log(`   Potential headers: ${row.slice(0, 5).join(', ')}`);
-                        
-                        if (score > bestScore) {
-                            // Use this row as headers
-                            const remainingData = fallbackRecords.slice(i + 1);
-                            bestData = remainingData.map(dataRow => {
-                                const obj = {};
-                                row.forEach((header, index) => {
-                                    if (header && dataRow[index]) {
-                                        obj[cleanupColumnName(header)] = dataRow[index];
-                                    }
-                                });
-                                return obj;
-                            }).filter(obj => Object.keys(obj).length > 0);
-                            
-                            bestHeaders = row.map(h => cleanupColumnName(h)).filter(h => h);
-                            bestScore = score;
-                            bestStartRow = i;
-                        }
-                    }
-                }
-            } catch (error) {
-                console.log('❌ Fallback approach failed:', error.message);
-            }
-        }
-        
-        console.log(`✅ Best CSV headers found: Starting row ${bestStartRow + 1} (score: ${bestScore})`);
-        console.log(`📋 Final headers: ${bestHeaders.join(', ')}`);
-        
         if (bestData.length === 0) {
-            throw new Error('No valid data rows found in CSV file');
+            throw new Error('No valid data rows found in file');
+                                    }
+        
+        return bestData;
+            } catch (error) {
+        console.error('❌ Error processing horizontal format file:', error);
+        throw error;
+            }
         }
         
-        // Clean the data
-        const cleanedData = bestData.map(row => {
-            const cleanRow = {};
-            for (const [key, value] of Object.entries(row)) {
-                const cleanKey = cleanupColumnName(key);
-                const cleanValue = typeof value === 'string' ? value.trim() : value;
-                if (cleanKey && cleanValue !== '') {
-                    cleanRow[cleanKey] = cleanValue;
-                }
-            }
-            return cleanRow;
-        }).filter(row => Object.keys(row).length > 0);
+async function processCSVFile(filePath, category = '', subcategory = '') {
+    try {
+        const csvData = fs.readFileSync(filePath, 'utf8');
         
-        console.log(`📊 Final processed data: ${cleanedData.length} records`);
-        return cleanedData;
+        // First, let's try simple CSV parsing
+        console.log('📁 CSV file content preview (first 500 chars):');
+        console.log(csvData.substring(0, 500));
+        
+        // Determine format based on category
+        const isVertical = isVerticalFormatCategory(category);
+        console.log(`📊 Format detection: ${isVertical ? 'Vertical' : 'Horizontal'} format detected for category: ${category}`);
+        
+        // Process based on format
+        const processedData = isVertical 
+            ? await processVerticalFormatFile(filePath)
+            : await processHorizontalFormatFile(filePath);
+        
+        console.log(`✅ Processed ${processedData.length} records`);
+        return processedData;
         
     } catch (error) {
-        throw new Error(`CSV parsing failed: ${error.message}`);
+        console.error('❌ Error processing file:', error);
+        throw error;
     }
 }
 
-async function processExcelFile(filePath) {
+async function processExcelFile(filePath, category = '', subcategory = '') {
     try {
         const workbook = xlsx.readFile(filePath, { cellDates: true, cellNF: false, cellText: false });
         const sheetName = workbook.SheetNames[0];
-        if (!sheetName) throw new Error('No sheets found in Excel file');
-        
         const worksheet = workbook.Sheets[sheetName];
         
-        // Smart header detection - scan first 10 rows to find the best header row
-        let bestHeaderRow = 0;
-        let bestScore = 0;
-        let bestHeaders = [];
+        // Convert to array of arrays first - don't use defval to preserve empty cells
+        const rawData = xlsx.utils.sheet_to_json(worksheet, { header: 1, raw: false });
+        
+        // Don't filter out rows, just work with what we have
+        const rows = rawData;
         
         console.log('🔍 Smart Excel processing: Scanning for headers...');
+        console.log(`📊 Total rows found: ${rows.length}`);
         
-        for (let rowIndex = 0; rowIndex < 10; rowIndex++) {
-            try {
-                // Get data starting from this row
-                const testData = xlsx.utils.sheet_to_json(worksheet, { 
-                    range: rowIndex,
-                    raw: false, 
-                    defval: '', 
-                    blankrows: false 
-                });
-                
-                if (testData.length === 0) continue;
-                
-                const headers = Object.keys(testData[0]);
-                const score = calculateHeaderScore(headers);
-                
-                console.log(`📊 Row ${rowIndex + 1}: ${headers.length} columns, score: ${score}`);
-                console.log(`   Headers: ${headers.slice(0, 3).join(', ')}${headers.length > 3 ? '...' : ''}`);
-                
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestHeaderRow = rowIndex;
-                    bestHeaders = headers;
-                }
-            } catch (error) {
-                console.log(`⚠️ Row ${rowIndex + 1}: Could not process`);
-                continue;
-            }
-        }
-        
-        console.log(`✅ Best header row found: Row ${bestHeaderRow + 1} (score: ${bestScore})`);
-        console.log(`📋 Final headers: ${bestHeaders.join(', ')}`);
-        
-        // Extract data using the best header row
-        const jsonData = xlsx.utils.sheet_to_json(worksheet, { 
-            range: bestHeaderRow,
-            raw: false, 
-            defval: '', 
-            blankrows: false 
+        // Debug: Show first 10 rows with ALL columns
+        console.log('📋 First 10 rows preview (showing all columns):');
+        rows.slice(0, 10).forEach((row, index) => {
+            console.log(`   Row ${index + 1}: [${row.join(' | ')}] (${row.length} columns)`);
         });
         
-        // Clean the data
-        return jsonData.map(row => {
-            const cleanRow = {};
-            for (const [key, value] of Object.entries(row)) {
-                const cleanKey = cleanupColumnName(key);
-                const cleanValue = typeof value === 'string' ? value.trim() : value;
-                if (cleanKey && cleanValue !== '') {
-                    cleanRow[cleanKey] = cleanValue;
+        // Determine format based on category
+        const isVertical = isVerticalFormatCategory(category);
+        console.log(`📊 Format detection: ${isVertical ? 'Vertical' : 'Horizontal'} format detected for category: ${category}`);
+        
+        if (isVertical) {
+            // Process vertical format (column names in first column)
+            console.log('🔄 Processing vertical format Excel...');
+            const record = {};
+            let fieldsProcessed = 0;
+            
+            rows.forEach((row, index) => {
+                if (row && row.length >= 1) {
+                    const fieldName = cleanupColumnName(row[0]);
+                    if (fieldName && fieldName.trim() !== '') {
+                        // Take all remaining columns as potential values
+                        const values = row.slice(1).filter(val => val !== '' && val !== null && val !== undefined);
+                        
+                        // Always add the field, even if no values
+                        if (values.length === 0) {
+                            record[fieldName] = 'N/A';
+                            fieldsProcessed++;
+                            console.log(`   ✅ Field ${fieldsProcessed}: "${fieldName}" = "N/A" (no value)`);
+                        } else {
+                            record[fieldName] = values.length === 1 ? values[0] : values.join(' ');
+                            fieldsProcessed++;
+                            console.log(`   ✅ Field ${fieldsProcessed}: "${fieldName}" = "${record[fieldName]}"`);
+                        }
+                    }
+                }
+            });
+            
+            console.log(`📊 Total fields processed: ${fieldsProcessed}`);
+            console.log(`📋 Final record keys: ${Object.keys(record).join(', ')}`);
+            
+            if (Object.keys(record).length === 0) {
+                console.log('⚠️ No fields found in vertical format, falling back to horizontal format processing');
+                // Fall back to horizontal processing
+                return await processHorizontalExcelFormat(rows);
+            }
+            
+            return [record]; // Single record with all fields
+        } else {
+            return await processHorizontalExcelFormat(rows);
+        }
+    } catch (error) {
+        console.error('❌ Error processing Excel file:', error);
+        throw error;
+    }
+}
+
+async function processHorizontalExcelFormat(rows) {
+    // Process horizontal format
+    console.log('🔄 Processing horizontal format Excel...');
+    let bestData = [];
+    let bestHeaders = [];
+    let bestScore = 0;
+    let bestStartRow = 0;
+    
+    // Try different starting rows
+    for (let startRow = 0; startRow < Math.min(20, rows.length); startRow++) {
+        try {
+            const potentialHeaders = rows[startRow];
+            if (!potentialHeaders || potentialHeaders.length < 2) continue;
+            
+            const cleanHeaders = potentialHeaders.map(h => cleanupColumnName(h.toString()));
+            const score = calculateHeaderScore(cleanHeaders);
+            
+            console.log(`📊 Row ${startRow + 1}: ${cleanHeaders.length} columns, score: ${score}`);
+            console.log(`   Headers: ${cleanHeaders.slice(0, 5).join(', ')}${cleanHeaders.length > 5 ? '...' : ''}`);
+            
+            if (score > bestScore && rows.length > startRow + 2) {
+                const data = [];
+                // Convert remaining rows to objects
+                for (let i = startRow + 1; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (row.length < 2) continue;
+                    
+                    const record = {};
+                    cleanHeaders.forEach((header, index) => {
+                        if (header && row[index] !== undefined && row[index] !== '') {
+                            record[header] = row[index];
+                        }
+                    });
+                    
+                    if (Object.keys(record).length > 0) {
+                        data.push(record);
+                    }
+                }
+                
+                if (data.length > 0) {
+                    bestScore = score;
+                    bestData = data;
+                    bestHeaders = cleanHeaders;
+                    bestStartRow = startRow;
                 }
             }
-            return cleanRow;
-        }).filter(row => Object.keys(row).length > 0);
-        
-    } catch (error) {
-        throw new Error(`Excel parsing failed: ${error.message}`);
+        } catch (error) {
+            console.log(`⚠️ Error processing row ${startRow + 1}:`, error.message);
+            continue;
+        }
     }
+    
+    if (bestData.length === 0) {
+        throw new Error('No valid data rows found in Excel file');
+    }
+    
+    console.log(`✅ Best Excel headers found: Starting row ${bestStartRow + 1} (score: ${bestScore})`);
+    console.log(`📋 Final headers: ${bestHeaders.join(', ')}`);
+    
+    return bestData;
 }
 
 function calculateHeaderScore(headers) {
@@ -432,6 +525,49 @@ function cleanupColumnName(columnName) {
     cleaned = cleaned.replace(/[^\w\s.-]/g, '');
     
     return cleaned.trim();
+}
+
+// Add this function after the cleanupColumnName function
+function generateSafeCollectionName(filename) {
+    // Remove file extension
+    let safeName = filename.replace(/\.[^/.]+$/, "");
+    // Remove special characters and spaces
+    safeName = safeName.replace(/[^a-zA-Z0-9_]/g, "_");
+    // Ensure it starts with a letter (MongoDB requirement)
+    if (/^[^a-zA-Z]/.test(safeName)) {
+        safeName = "file_" + safeName;
+    }
+    // Limit length to avoid very long collection names
+    return safeName.substring(0, 40);
+}
+
+// Add this function after the cleanupColumnName function
+function extractFileIdentifier(filename) {
+    // Remove file extension
+    let name = filename.replace(/\.[^/.]+$/, "");
+    
+    // Extract patterns like DL123, DL_123, etc.
+    const matches = name.match(/([A-Za-z]+[_]?\d+)/);
+    if (matches) {
+        return matches[1].toUpperCase();
+    }
+    
+    // If no specific pattern found, create a clean identifier from the name
+    name = name.replace(/[^a-zA-Z0-9]/g, "_");
+    name = name.replace(/_+/g, "_"); // Replace multiple underscores with single
+    name = name.replace(/^_|_$/g, ""); // Remove leading/trailing underscores
+    
+    // Ensure it starts with a letter
+    if (/^[^a-zA-Z]/.test(name)) {
+        name = "FILE_" + name;
+    }
+    
+    // Limit length and return uppercase
+    return name.substring(0, 30).toUpperCase();
+}
+
+function generateTimestamp() {
+    return new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14); // YYYYMMDDHHmmss
 }
 
 // Main page route
@@ -1299,7 +1435,13 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
         
         const extractedDate = extractDateFromFilename(req.file.originalname);
         const finalDate = processingDate || extractedDate;
-        const finalSubcategory = subcategory || DATA_CATEGORIES[category].subcategories[0];
+        let finalSubcategory = subcategory || DATA_CATEGORIES[category].subcategories[0];
+        
+        // If category is 'others', extract subcategory from filename
+        if (finalSubcategory === 'others') {
+            finalSubcategory = extractFileIdentifier(req.file.originalname);
+            console.log('📑 Extracted subcategory from filename:', finalSubcategory);
+        }
         
         console.log('📅 Processing:', { extractedDate, finalDate, finalSubcategory });
         
@@ -1307,9 +1449,9 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
         const fileExt = path.extname(req.file.originalname).toLowerCase();
         
         if (fileExt === '.csv') {
-            processedData = await processCSVFile(req.file.path);
+            processedData = await processCSVFile(req.file.path, category, finalSubcategory);
         } else if (['.xlsx', '.xls'].includes(fileExt)) {
-            processedData = await processExcelFile(req.file.path);
+            processedData = await processExcelFile(req.file.path, category, finalSubcategory);
         } else {
             throw new Error(`Unsupported file type: ${fileExt}`);
         }
@@ -1318,7 +1460,9 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
             throw new Error('No data found in file or file is empty');
         }
         
-        collectionName = `${category}.${finalDate}.${finalSubcategory}`;
+        // Add timestamp to collection name
+        const timestamp = generateTimestamp();
+        collectionName = `${category}.${finalDate}.${finalSubcategory}.${timestamp}`;
         console.log('🗂️ Target collection:', collectionName);
         
         enhancedData = processedData.map((record, index) => ({
@@ -1329,7 +1473,8 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
             category: category,
             subcategory: finalSubcategory,
             uploadedAt: new Date().toISOString(),
-            processingDate: finalDate
+            processingDate: finalDate,
+            collectionTimestamp: timestamp
         }));
         
         // MongoDB operations
@@ -1340,11 +1485,10 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
             const db = client.db('financial_data_2025');
             await db.collection(collectionName).insertMany(enhancedData);
             
-            // Update file tracker
+            // Update file tracker with version history
             const trackerId = `${category}.${finalSubcategory}`;
-            await db.collection('file_versions_tracker').replaceOne(
-                { _id: trackerId },
-                {
+            const trackerUpdate = {
+                $set: {
                     _id: trackerId,
                     category: category,
                     subcategory: finalSubcategory,
@@ -1355,6 +1499,21 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
                     fileSize: req.file.size,
                     latestUpload: new Date().toISOString()
                 },
+                $push: {
+                    versions: {
+                        collection: collectionName,
+                        date: finalDate,
+                        fileName: req.file.originalname,
+                        recordCount: enhancedData.length,
+                        uploadedAt: new Date().toISOString(),
+                        timestamp: timestamp
+                    }
+                }
+            };
+            
+            await db.collection('file_versions_tracker').updateOne(
+                { _id: trackerId },
+                trackerUpdate,
                 { upsert: true }
             );
             
@@ -1400,21 +1559,23 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
 
 // ETL Mapping API Routes
 app.get('/api/mapping/available-tables', async (req, res) => {
+    console.log('📊 Getting available tables for mapping...');
+    const tableDetails = {};
+    
     try {
-        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        const client = new MongoClient(mongoUri);
         await client.connect();
         const db = client.db('financial_data_2025');
         
-        const availableFiles = await db.collection('file_versions_tracker').find({}).toArray();
-        const tableDetails = {};
+        // Get all file trackers
+        const fileTrackers = await db.collection('file_versions_tracker').find({}).toArray();
+        console.log(`📋 Found ${fileTrackers.length} file trackers`);
         
-        for (const file of availableFiles) {
+        for (const file of fileTrackers) {
             try {
-                console.log(`🔍 Processing table: ${file.subcategory} from collection: ${file.latestCollection}`);
-                
-                // Get multiple sample records to ensure we capture all columns
+                // Get sample records from the latest collection
                 const sampleRecords = await db.collection(file.latestCollection).find({}).limit(5).toArray();
-                console.log(`📊 Found ${sampleRecords.length} sample records for ${file.subcategory}`);
+                console.log(`📑 Processing ${file.latestCollection}: ${sampleRecords.length} sample records`);
                 
                 if (sampleRecords.length > 0) {
                     // Collect all unique columns from all sample records
@@ -1423,7 +1584,7 @@ app.get('/api/mapping/available-tables', async (req, res) => {
                     sampleRecords.forEach((record, index) => {
                         console.log(`📋 Record ${index + 1} columns:`, Object.keys(record));
                         Object.keys(record).forEach(key => {
-                            if (!['_id', 'recordIndex', 'fileName', 'fileSize', 'category', 'subcategory', 'uploadedAt', 'processingDate'].includes(key)) {
+                            if (!['_id', 'recordIndex', 'fileName', 'fileSize', 'category', 'subcategory', 'uploadedAt', 'processingDate', 'collectionTimestamp'].includes(key)) {
                                 allColumns.add(key);
                             }
                         });
@@ -1443,7 +1604,8 @@ app.get('/api/mapping/available-tables', async (req, res) => {
                         latestCollection: file.latestCollection,
                         date: file.latestDate,
                         columns: cleanColumns,
-                        icon: DATA_CATEGORIES[file.category]?.icon || '📄'
+                        icon: DATA_CATEGORIES[file.category]?.icon || '📄',
+                        versions: file.versions?.length || 1
                     };
                 }
             } catch (error) {
@@ -1460,7 +1622,8 @@ app.get('/api/mapping/available-tables', async (req, res) => {
                     latestCollection: file.latestCollection,
                     date: file.latestDate,
                     columns: [],
-                    icon: DATA_CATEGORIES[file.category]?.icon || '📄'
+                    icon: DATA_CATEGORIES[file.category]?.icon || '📄',
+                    versions: file.versions?.length || 1
                 };
             }
         }
@@ -1825,4 +1988,131 @@ app.listen(PORT, () => {
     console.log(`   👁️ Data viewer tab to see uploaded data`);
     console.log(`   🎯 Table selection and column mapping`);
     console.log(`   📊 MongoDB to PostgreSQL processing`);
+});
+
+// Add this new endpoint before app.listen
+app.get('/api/client/:clientId', async (req, res) => {
+    try {
+        const clientId = req.params.clientId;
+        console.log(`🔍 Searching for client with ID: ${clientId}`);
+        
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        // Get the latest client_info collection from file_versions_tracker
+        const tracker = await db.collection('file_versions_tracker')
+            .findOne({ 
+                category: 'client_info',
+                subcategory: 'client_info'
+            });
+            
+        if (!tracker || !tracker.latestCollection) {
+            throw new Error('No client information collection found');
+        }
+        
+        console.log(`📂 Searching in collection: ${tracker.latestCollection}`);
+        
+        // Search for client in the latest collection
+        const clientInfo = await db.collection(tracker.latestCollection)
+            .findOne({
+                $or: [
+                    { "Client Id": clientId },
+                    { "Client_Id": clientId },
+                    { "ClientId": clientId },
+                    { "Client_ID": clientId },
+                    { "client_id": clientId }
+                ]
+            });
+            
+        if (!clientInfo) {
+            return res.status(404).json({
+                success: false,
+                error: `Client with ID ${clientId} not found`
+            });
+        }
+        
+        // Format the response
+        const formattedInfo = {
+            clientId: clientInfo["Client Id"] || clientInfo["Client_Id"] || clientInfo["ClientId"] || clientInfo["Client_ID"] || clientInfo["client_id"],
+            clientName: clientInfo["Client Name"] || clientInfo["Client_Name"] || clientInfo["ClientName"] || "",
+            clientCode: clientInfo["Client Code"] || clientInfo["Client_Code"] || clientInfo["ClientCode"] || "",
+            firstName: clientInfo["First Holder First Name"] || clientInfo["FirstName"] || "",
+            middleName: clientInfo["First Holder Middle Name"] || clientInfo["MiddleName"] || "",
+            lastName: clientInfo["First Holder Last Name"] || clientInfo["LastName"] || "",
+            gender: clientInfo["First Holder Gender"] || clientInfo["Gender"] || "",
+            // Add any other fields you want to include
+            fullData: clientInfo // Include all raw data for reference
+        };
+        
+        res.json({
+            success: true,
+            data: formattedInfo
+        });
+        
+    } catch (error) {
+        console.error('❌ Error fetching client info:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to fetch client information',
+            details: error.message
+        });
+    }
+});
+
+// Also add an endpoint to list all clients
+app.get('/api/clients', async (req, res) => {
+    try {
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        // Get the latest client_info collection
+        const tracker = await db.collection('file_versions_tracker')
+            .findOne({ 
+                category: 'client_info',
+                subcategory: 'client_info'
+            });
+            
+        if (!tracker || !tracker.latestCollection) {
+            throw new Error('No client information collection found');
+        }
+        
+        // Get all clients with basic info
+        const clients = await db.collection(tracker.latestCollection)
+            .find({})
+            .project({
+                "Client Id": 1,
+                "Client_Id": 1,
+                "ClientId": 1,
+                "Client Name": 1,
+                "Client_Name": 1,
+                "ClientName": 1,
+                "Client Code": 1,
+                "Client_Code": 1,
+                "ClientCode": 1
+            })
+            .toArray();
+            
+        // Format the response
+        const formattedClients = clients.map(client => ({
+            clientId: client["Client Id"] || client["Client_Id"] || client["ClientId"] || "",
+            clientName: client["Client Name"] || client["Client_Name"] || client["ClientName"] || "",
+            clientCode: client["Client Code"] || client["Client_Code"] || client["ClientCode"] || ""
+        }));
+        
+        res.json({
+            success: true,
+            count: formattedClients.length,
+            data: formattedClients
+        });
+        
+    } catch (error) {
+        console.error('❌ Error listing clients:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to list clients',
+            details: error.message
+        });
+    }
 });

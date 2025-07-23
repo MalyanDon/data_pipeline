@@ -1,6 +1,5 @@
 # ===================================================
-# ETL DATA PIPELINE DOCKERFILE - RENDER DEPLOYMENT
-# NO CHMOD COMMANDS - JavaScript files don't need it
+# PRODUCTION DOCKERFILE - RENDER DEPLOYMENT
 # ===================================================
 
 FROM node:18-alpine
@@ -16,15 +15,22 @@ RUN apk add --no-cache \
     g++ \
     postgresql-client
 
-# Copy and install Node.js dependencies
+# Copy package files first for better caching
 COPY package*.json ./
+
+# Install Node.js dependencies
 RUN npm install --production && npm cache clean --force
 
-# Copy the complete application
-COPY . .
+# Copy the main application file explicitly
+COPY working-upload-system.js ./
 
-# Debug: List files to verify copying
-RUN ls -la
+# Copy other necessary files
+COPY config.js ./
+COPY start.sh ./
+
+# Copy any other files that might be needed
+COPY *.md ./
+COPY *.json ./
 
 # Create necessary directories
 RUN mkdir -p temp_uploads
@@ -32,8 +38,11 @@ RUN mkdir -p temp_uploads
 # Make start script executable
 RUN chmod +x start.sh
 
+# Debug: List files to verify copying
+RUN echo "📁 Files in /app:" && ls -la
+
 # Application runs on port 3000
 EXPOSE 3000
 
-# Start the ETL data pipeline using the start script
+# Start the ETL data pipeline
 CMD ["./start.sh"] 

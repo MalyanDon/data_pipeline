@@ -23,7 +23,7 @@ RUN npm install --production && npm cache clean --force
 # Copy the complete application
 COPY . .
 
-# Ensure upload directory exists
+# Create necessary directories
 RUN mkdir -p temp_uploads
 
 # Application runs on port 3000

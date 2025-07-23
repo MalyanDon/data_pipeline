@@ -768,15 +768,58 @@ app.get('/', (req, res) => {
                 
                 <!-- PostgreSQL Viewer Tab -->
                 <div id="postgresTab" class="tab-content hidden">
-                    <h2>🐘 PostgreSQL Viewer</h2>
+                    <h2>🐘 PostgreSQL Data Explorer</h2>
                     
-                    <button class="btn" onclick="loadPostgreSQLTables()">🔄 Refresh PostgreSQL Tables</button>
+                    <!-- Table Explorer Section -->
+                    <div class="explorer-section" style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3>🗂️ Table Explorer</h3>
+                        <p style="color: #666; margin-bottom: 15px;">Explore your PostgreSQL tables to see what data is available</p>
+                        <button class="btn" onclick="loadPostgreSQLTables()" style="background: #2196f3;">🔄 Refresh Tables</button>
+                        <button class="btn" onclick="showTableExplorer()" style="background: #4caf50;">🔍 Explore Tables</button>
+                        <div id="explorerStatus"></div>
+                    </div>
+                    
+                    <!-- Advanced Client Search Section -->
+                    <div class="search-section" style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h3>🎯 Advanced Client Data Search</h3>
+                        <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px;">
+                            <input type="text" id="clientIdSearch" placeholder="Enter Client ID" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+                            <button class="btn" onclick="showCustomQueryBuilder()" style="background: #ff9800;">⚙️ Custom Query</button>
+                            <button class="btn" onclick="searchClientData()" style="background: #007bff;">🔍 Quick Search</button>
+                            <button class="btn" onclick="clearClientSearch()" style="background: #6c757d;">🗑️ Clear</button>
+                        </div>
+                        <div id="clientSearchStatus"></div>
+                    </div>
+                    
+                    <!-- Custom Query Builder -->
+                    <div id="customQueryBuilder" class="query-builder" style="background: #fff3e0; padding: 20px; border-radius: 8px; margin-bottom: 20px; display: none;">
+                        <h3>⚙️ Custom Query Builder</h3>
+                        <div style="margin-bottom: 15px;">
+                            <label><strong>Select Tables:</strong></label>
+                            <div id="tableSelector" style="margin-top: 10px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: white;">
+                                <!-- Tables will be loaded here -->
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 15px;">
+                            <label><strong>Select Fields for Each Table:</strong></label>
+                            <div id="fieldSelector" style="margin-top: 10px;">
+                                <!-- Field selectors will be generated here -->
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="btn" onclick="buildCustomQuery()" style="background: #4caf50;">🔧 Build Query</button>
+                            <button class="btn" onclick="saveQueryTemplate()" style="background: #9c27b0;">💾 Save Template</button>
+                            <button class="btn" onclick="hideCustomQueryBuilder()" style="background: #6c757d;">❌ Close</button>
+                        </div>
+                    </div>
                     
                     <div id="postgresStatus"></div>
                     
-                    <div id="postgresTablesContainer">
-                        <!-- PostgreSQL tables will be loaded here -->
-                    </div>
+                    <!-- Table Explorer Results -->
+                    <div id="tableExplorerResults" style="margin-top: 20px;"></div>
+                    
+                    <!-- Client Data Results -->
+                    <div id="clientDataResults" style="margin-top: 20px;"></div>
                 </div>
             </div>
         </div>
@@ -1679,6 +1722,10 @@ app.get('/', (req, res) => {
                     } else {
                         showStatus('postgresStatus', \`❌ Error loading tables: \${data.error}\`, 'error');
                     }
+                    
+                    // Also load client tables for the search functionality
+                    await loadClientTables();
+                    
                 } catch (error) {
                     showStatus('postgresStatus', \`❌ Error: \${error.message}\`, 'error');
                 }
@@ -1744,6 +1791,477 @@ app.get('/', (req, res) => {
                     container.innerHTML = \`<p style="color: red;">Error: \${error.message}</p>\`;
                 }
             }
+            
+            // Enhanced PostgreSQL Functions
+            let availableTables = [];
+            let tableDetails = {};
+            let selectedTablesForQuery = [];
+            let fieldSelections = {};
+            
+            async function loadClientTables() {
+                try {
+                    const response = await fetch('/api/postgresql/client-tables');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        availableTables = data.tables;
+                        console.log('✅ Loaded client tables:', availableTables);
+                    }
+                } catch (error) {
+                    console.error('Error loading client tables:', error);
+                }
+            }
+            
+            async function showTableExplorer() {
+                try {
+                    showStatus('explorerStatus', 'Loading table details...', 'info');
+                    
+                    const response = await fetch('/api/postgresql/tables');
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        renderTableExplorer(data.tables);
+                        showStatus('explorerStatus', \`✅ Loaded \${data.tables.length} tables for exploration\`, 'success');
+                    } else {
+                        showStatus('explorerStatus', \`❌ Error: \${data.error}\`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('explorerStatus', \`❌ Error: \${error.message}\`, 'error');
+                }
+            }
+            
+            function renderTableExplorer(tables) {
+                const container = document.getElementById('tableExplorerResults');
+                
+                if (tables.length === 0) {
+                    container.innerHTML = '<p>No PostgreSQL tables found.</p>';
+                    return;
+                }
+                
+                let html = '<h3>🗂️ Available Tables</h3>';
+                
+                tables.forEach(table => {
+                    html += \`
+                        <div class="table-explorer-card" style="margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; border-radius: 8px; background: white;">
+                            <div style="display: flex; justify-content: between; align-items: center; margin-bottom: 10px;">
+                                <h4 style="margin: 0;">🗂️ \${table.name}</h4>
+                                <button class="btn" onclick="exploreTableDetails('\${table.name}')" style="background: #2196f3; padding: 5px 10px; font-size: 12px;">🔍 Explore</button>
+                            </div>
+                            <p style="margin: 5px 0; color: #666;"><strong>Columns:</strong> \${table.columns.length}</p>
+                            <div id="tableDetails_\${table.name}" style="display: none; margin-top: 10px;"></div>
+                        </div>
+                    \`;
+                });
+                
+                container.innerHTML = html;
+            }
+            
+            async function exploreTableDetails(tableName) {
+                try {
+                    const response = await fetch(\`/api/postgresql/table-details/\${tableName}\`);
+                    const data = await response.json();
+                    
+                    const container = document.getElementById(\`tableDetails_\${tableName}\`);
+                    
+                    if (data.success) {
+                        tableDetails[tableName] = data;
+                        
+                        let html = \`
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
+                                <h5>📊 Table Details</h5>
+                                <p><strong>Total Records:</strong> \${data.totalRecords.toLocaleString()}</p>
+                                <p><strong>Has Client Data:</strong> \${data.hasClientData ? '✅ Yes' : '❌ No'}</p>
+                                
+                                <h6>📋 Columns (\${data.columns.length}):</h6>
+                                <div style="max-height: 200px; overflow-y: auto; margin-bottom: 15px;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                                        <thead>
+                                            <tr style="background: #e9ecef;">
+                                                <th style="border: 1px solid #ddd; padding: 5px;">Column</th>
+                                                <th style="border: 1px solid #ddd; padding: 5px;">Type</th>
+                                                <th style="border: 1px solid #ddd; padding: 5px;">Nullable</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            \${data.columns.map(col => \`
+                                                <tr>
+                                                    <td style="border: 1px solid #ddd; padding: 5px; font-weight: bold;">\${col.column_name}</td>
+                                                    <td style="border: 1px solid #ddd; padding: 5px;">\${col.data_type}</td>
+                                                    <td style="border: 1px solid #ddd; padding: 5px;">\${col.is_nullable}</td>
+                                                </tr>
+                                            \`).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <h6>📄 Sample Data (5 rows):</h6>
+                                <div style="max-height: 200px; overflow-y: auto;">
+                                    <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+                                        <thead>
+                                            <tr style="background: #e9ecef;">
+                                                \${data.columns.map(col => \`<th style="border: 1px solid #ddd; padding: 3px;">\${col.column_name}</th>\`).join('')}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            \${data.sampleData.map(row => \`
+                                                <tr>
+                                                    \${data.columns.map(col => \`<td style="border: 1px solid #ddd; padding: 3px;">\${row[col.column_name] || ''}</td>\`).join('')}
+                                                </tr>
+                                            \`).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        \`;
+                        
+                        container.innerHTML = html;
+                        container.style.display = 'block';
+                        
+                    } else {
+                        container.innerHTML = \`<p style="color: red;">Error: \${data.error}</p>\`;
+                        container.style.display = 'block';
+                    }
+                } catch (error) {
+                    const container = document.getElementById(\`tableDetails_\${tableName}\`);
+                    container.innerHTML = \`<p style="color: red;">Error: \${error.message}</p>\`;
+                    container.style.display = 'block';
+                }
+            }
+            
+            // Custom Query Builder Functions
+            function showCustomQueryBuilder() {
+                const clientId = document.getElementById('clientIdSearch').value.trim();
+                if (!clientId) {
+                    showStatus('clientSearchStatus', 'Please enter a Client ID first', 'error');
+                    return;
+                }
+                
+                document.getElementById('customQueryBuilder').style.display = 'block';
+                loadTableSelector();
+            }
+            
+            function hideCustomQueryBuilder() {
+                document.getElementById('customQueryBuilder').style.display = 'none';
+                selectedTablesForQuery = [];
+                fieldSelections = {};
+            }
+            
+            function loadTableSelector() {
+                const container = document.getElementById('tableSelector');
+                
+                if (availableTables.length === 0) {
+                    container.innerHTML = '<p>No tables with client data found. Please refresh tables first.</p>';
+                    return;
+                }
+                
+                let html = '';
+                availableTables.forEach(table => {
+                    html += \`
+                        <div style="margin-bottom: 10px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background: white;">
+                            <label style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" onchange="toggleTableSelection('\${table.tableName}', this.checked)" style="margin-right: 10px;">
+                                <strong>\${table.tableName}</strong>
+                                <span style="margin-left: 10px; color: #666; font-size: 12px;">
+                                    (Client columns: \${table.clientColumns.join(', ')})
+                                </span>
+                            </label>
+                        </div>
+                    \`;
+                });
+                
+                container.innerHTML = html;
+            }
+            
+            function toggleTableSelection(tableName, isSelected) {
+                if (isSelected) {
+                    if (!selectedTablesForQuery.includes(tableName)) {
+                        selectedTablesForQuery.push(tableName);
+                    }
+                } else {
+                    selectedTablesForQuery = selectedTablesForQuery.filter(t => t !== tableName);
+                    delete fieldSelections[tableName];
+                }
+                
+                updateFieldSelector();
+            }
+            
+            function updateFieldSelector() {
+                const container = document.getElementById('fieldSelector');
+                
+                if (selectedTablesForQuery.length === 0) {
+                    container.innerHTML = '<p>Select tables first to choose fields.</p>';
+                    return;
+                }
+                
+                let html = '';
+                selectedTablesForQuery.forEach(tableName => {
+                    const tableDetail = tableDetails[tableName];
+                    if (!tableDetail) {
+                        html += \`<p>Loading details for \${tableName}...</p>\`;
+                        return;
+                    }
+                    
+                    html += \`
+                        <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background: white;">
+                            <h5 style="margin: 0 0 10px 0;">📋 \${tableName}</h5>
+                            <div style="max-height: 150px; overflow-y: auto;">
+                                \${tableDetail.columns.map(col => \`
+                                    <label style="display: block; margin: 5px 0; cursor: pointer;">
+                                        <input type="checkbox" 
+                                               onchange="toggleFieldSelection('\${tableName}', '\${col.column_name}', this.checked)"
+                                               \${fieldSelections[tableName] && fieldSelections[tableName].includes(col.column_name) ? 'checked' : ''}
+                                               style="margin-right: 8px;">
+                                        <span style="font-weight: bold;">\${col.column_name}</span>
+                                        <span style="color: #666; font-size: 11px; margin-left: 5px;">(\${col.data_type})</span>
+                                    </label>
+                                \`).join('')}
+                            </div>
+                        </div>
+                    \`;
+                });
+                
+                container.innerHTML = html;
+            }
+            
+            function toggleFieldSelection(tableName, fieldName, isSelected) {
+                if (!fieldSelections[tableName]) {
+                    fieldSelections[tableName] = [];
+                }
+                
+                if (isSelected) {
+                    if (!fieldSelections[tableName].includes(fieldName)) {
+                        fieldSelections[tableName].push(fieldName);
+                    }
+                } else {
+                    fieldSelections[tableName] = fieldSelections[tableName].filter(f => f !== fieldName);
+                }
+            }
+            
+            async function buildCustomQuery() {
+                const clientId = document.getElementById('clientIdSearch').value.trim();
+                
+                if (!clientId) {
+                    showStatus('clientSearchStatus', 'Please enter a Client ID', 'error');
+                    return;
+                }
+                
+                if (selectedTablesForQuery.length === 0) {
+                    showStatus('clientSearchStatus', 'Please select at least one table', 'error');
+                    return;
+                }
+                
+                // Validate field selections
+                const tableQueries = [];
+                for (const tableName of selectedTablesForQuery) {
+                    const selectedFields = fieldSelections[tableName] || [];
+                    if (selectedFields.length === 0) {
+                        showStatus('clientSearchStatus', \`Please select fields for table: \${tableName}\`, 'error');
+                        return;
+                    }
+                    
+                    // Find client column for this table
+                    const table = availableTables.find(t => t.tableName === tableName);
+                    if (!table || table.clientColumns.length === 0) {
+                        showStatus('clientSearchStatus', \`No client column found for table: \${tableName}\`, 'error');
+                        return;
+                    }
+                    
+                    tableQueries.push({
+                        tableName: tableName,
+                        selectedFields: selectedFields,
+                        clientColumn: table.clientColumns[0] // Use first client column
+                    });
+                }
+                
+                try {
+                    showStatus('clientSearchStatus', 'Executing custom query...', 'info');
+                    
+                    const response = await fetch('/api/postgresql/custom-query', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            clientId: clientId,
+                            tableQueries: tableQueries
+                        })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        renderCustomQueryResults(data);
+                        showStatus('clientSearchStatus', \`✅ Custom query completed: \${data.totalRecords} records found\`, 'success');
+                    } else {
+                        showStatus('clientSearchStatus', \`❌ Error: \${data.error}\`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('clientSearchStatus', \`❌ Error: \${error.message}\`, 'error');
+                }
+            }
+            
+            function renderCustomQueryResults(data) {
+                const container = document.getElementById('clientDataResults');
+                
+                if (data.totalRecords === 0) {
+                    container.innerHTML = \`
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                            <h4>🔍 No Data Found</h4>
+                            <p>No records found for Client ID: <strong>\${data.clientId}</strong></p>
+                            <p>Try selecting different fields or tables.</p>
+                        </div>
+                    \`;
+                    return;
+                }
+                
+                let html = \`
+                    <div style="margin-top: 20px;">
+                        <h3>🎯 Custom Query Results for: <span style="color: #007bff;">\${data.clientId}</span></h3>
+                        <p><strong>Total Records:</strong> \${data.totalRecords} | <strong>Tables Queried:</strong> \${data.tablesQueried.join(', ')}</p>
+                \`;
+                
+                Object.entries(data.results).forEach(([tableName, result]) => {
+                    if (result.error) {
+                        html += \`
+                            <div style="margin-bottom: 20px; padding: 15px; border: 1px solid #ffcdd2; border-radius: 8px; background: #ffebee;">
+                                <h4>❌ \${tableName}</h4>
+                                <p style="color: red;">Error: \${result.error}</p>
+                            </div>
+                        \`;
+                    } else {
+                        html += \`
+                            <div style="margin-bottom: 30px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                                <div style="background: #f8f9fa; padding: 15px; border-bottom: 1px solid #ddd;">
+                                    <h4>🗂️ \${tableName}</h4>
+                                    <p><strong>Records:</strong> \${result.count} | <strong>Selected Fields:</strong> \${result.columns.length}</p>
+                                </div>
+                                <div style="overflow-x: auto;">
+                                    <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; font-size: 12px;">
+                                        <thead>
+                                            <tr style="background: #e9ecef;">
+                                                \${result.columns.map(col => \`<th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">\${col}</th>\`).join('')}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            \${result.data.map(row => \`
+                                                <tr>
+                                                    \${result.columns.map(col => \`<td style="border: 1px solid #ddd; padding: 8px;">\${row[col] || ''}</td>\`).join('')}
+                                                </tr>
+                                            \`).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        \`;
+                    }
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+            }
+            
+            async function searchClientData() {
+                const clientId = document.getElementById('clientIdSearch').value.trim();
+                
+                if (!clientId) {
+                    showStatus('clientSearchStatus', 'Please enter a Client ID', 'error');
+                    return;
+                }
+                
+                try {
+                    showStatus('clientSearchStatus', 'Searching for client data...', 'info');
+                    
+                    const response = await fetch(\`/api/postgresql/client-data/\${encodeURIComponent(clientId)}\`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        renderClientDataResults(data);
+                        showStatus('clientSearchStatus', \`✅ Found \${data.totalRecords} records across \${data.tablesFound.length} tables\`, 'success');
+                    } else {
+                        showStatus('clientSearchStatus', \`❌ Error: \${data.error}\`, 'error');
+                        document.getElementById('clientDataResults').innerHTML = '';
+                    }
+                } catch (error) {
+                    showStatus('clientSearchStatus', \`❌ Error: \${error.message}\`, 'error');
+                    document.getElementById('clientDataResults').innerHTML = '';
+                }
+            }
+            
+            function renderClientDataResults(data) {
+                const container = document.getElementById('clientDataResults');
+                
+                if (data.totalRecords === 0) {
+                    container.innerHTML = \`
+                        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                            <h4>🔍 No Data Found</h4>
+                            <p>No records found for Client ID: <strong>\${data.clientId}</strong></p>
+                            <p>Try searching in a different table or check if the Client ID is correct.</p>
+                        </div>
+                    \`;
+                    return;
+                }
+                
+                let html = \`
+                    <div style="margin-top: 20px;">
+                        <h3>📊 Client Data Results for: <span style="color: #007bff;">\${data.clientId}</span></h3>
+                        <p><strong>Total Records:</strong> \${data.totalRecords} | <strong>Tables Found:</strong> \${data.tablesFound.join(', ')}</p>
+                \`;
+                
+                Object.entries(data.data).forEach(([tableName, tableData]) => {
+                    html += \`
+                        <div style="margin-bottom: 30px; border: 1px solid #ddd; border-radius: 8px; overflow: hidden;">
+                            <div style="background: #f8f9fa; padding: 15px; border-bottom: 1px solid #ddd;">
+                                <h4>🗂️ Table: \${tableName}</h4>
+                                <p><strong>Records:</strong> \${tableData.count} | <strong>Columns:</strong> \${tableData.columns.length}</p>
+                            </div>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; border: 1px solid #ddd; font-size: 12px;">
+                                    <thead>
+                                        <tr style="background: #e9ecef;">
+                                            \${tableData.columns.map(col => \`<th style="border: 1px solid #ddd; padding: 8px; text-align: left; font-weight: bold;">\${col}</th>\`).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        \${tableData.data.map(row => \`
+                                            <tr>
+                                                \${tableData.columns.map(col => \`<td style="border: 1px solid #ddd; padding: 8px;">\${row[col] || ''}</td>\`).join('')}
+                                            </tr>
+                                        \`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    \`;
+                });
+                
+                html += '</div>';
+                container.innerHTML = html;
+            }
+            
+            function clearClientSearch() {
+                document.getElementById('clientIdSearch').value = '';
+                document.getElementById('clientSearchStatus').innerHTML = '';
+                document.getElementById('clientDataResults').innerHTML = '';
+                document.getElementById('tableExplorerResults').innerHTML = '';
+                hideCustomQueryBuilder();
+            }
+            
+            function saveQueryTemplate() {
+                // TODO: Implement query template saving functionality
+                showStatus('clientSearchStatus', 'Query template saving feature coming soon!', 'info');
+            }
+            
+            // Add keyboard shortcut for search
+            document.addEventListener('DOMContentLoaded', function() {
+                const clientIdSearch = document.getElementById('clientIdSearch');
+                if (clientIdSearch) {
+                    clientIdSearch.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter') {
+                            searchClientData();
+                        }
+                    });
+                }
+            });
             
             // Data Viewer functionality
             async function loadDataViewer() {
@@ -2708,6 +3226,304 @@ app.get('/api/clients', async (req, res) => {
         res.status(500).json({
             success: false,
             error: 'Failed to list clients',
+            details: error.message
+        });
+    }
+});
+
+// Health check endpoint for Render
+app.get('/health', (req, res) => {
+    res.status(200).json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        service: 'ETL Data Pipeline'
+    });
+});
+
+// PostgreSQL Client Data Search by Client ID
+app.get('/api/postgresql/client-data/:clientId', async (req, res) => {
+    try {
+        const { clientId } = req.params;
+        const { tableName } = req.query; // Optional: specific table to search
+        
+        console.log(`🔍 Searching PostgreSQL for Client ID: ${clientId}`);
+        
+        const pgPool = new Pool(config.postgresql);
+        
+        let tables = [];
+        let allClientData = {};
+        
+        if (tableName) {
+            // Search in specific table
+            tables = [tableName];
+        } else {
+            // Get all tables that might contain client data
+            const tablesResult = await pgPool.query(`
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                AND table_type = 'BASE TABLE'
+                ORDER BY table_name
+            `);
+            tables = tablesResult.rows.map(row => row.table_name);
+        }
+        
+        // Search for client data in each table
+        for (const table of tables) {
+            try {
+                // Check if table has client-related columns
+                const columnsResult = await pgPool.query(`
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = $1 
+                    AND table_schema = 'public'
+                    AND (
+                        LOWER(column_name) LIKE '%client%' 
+                        OR LOWER(column_name) LIKE '%client_id%'
+                        OR LOWER(column_name) LIKE '%clientid%'
+                        OR LOWER(column_name) LIKE '%client_code%'
+                    )
+                `, [table]);
+                
+                if (columnsResult.rows.length > 0) {
+                    // Found client-related columns, search for the client ID
+                    const clientColumns = columnsResult.rows.map(row => row.column_name);
+                    
+                    // Build dynamic WHERE clause for different client ID column names
+                    const whereConditions = clientColumns.map(col => `"${col}" = $1`).join(' OR ');
+                    
+                    const dataResult = await pgPool.query(`
+                        SELECT * FROM "${table}" 
+                        WHERE ${whereConditions}
+                        ORDER BY 1
+                        LIMIT 100
+                    `, [clientId]);
+                    
+                    if (dataResult.rows.length > 0) {
+                        allClientData[table] = {
+                            columns: Object.keys(dataResult.rows[0]),
+                            data: dataResult.rows,
+                            count: dataResult.rows.length
+                        };
+                        console.log(`✅ Found ${dataResult.rows.length} records in table: ${table}`);
+                    }
+                }
+            } catch (tableError) {
+                console.log(`⚠️ Error searching table ${table}:`, tableError.message);
+                // Continue with other tables
+            }
+        }
+        
+        await pgPool.end();
+        
+        const totalRecords = Object.values(allClientData).reduce((sum, tableData) => sum + tableData.count, 0);
+        
+        res.json({
+            success: true,
+            clientId: clientId,
+            totalRecords: totalRecords,
+            tablesFound: Object.keys(allClientData),
+            data: allClientData
+        });
+        
+    } catch (error) {
+        console.error('❌ Error searching PostgreSQL for client data:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to search client data in PostgreSQL',
+            details: error.message
+        });
+    }
+});
+
+// Get available PostgreSQL tables for client search
+app.get('/api/postgresql/client-tables', async (req, res) => {
+    try {
+        const pgPool = new Pool(config.postgresql);
+        
+        const result = await pgPool.query(`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_type = 'BASE TABLE'
+            ORDER BY table_name
+        `);
+        
+        const tables = result.rows.map(row => row.table_name);
+        
+        // Check which tables have client-related columns
+        const tablesWithClientData = [];
+        
+        for (const table of tables) {
+            const columnsResult = await pgPool.query(`
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = $1 
+                AND table_schema = 'public'
+                AND (
+                    LOWER(column_name) LIKE '%client%' 
+                    OR LOWER(column_name) LIKE '%client_id%'
+                    OR LOWER(column_name) LIKE '%clientid%'
+                    OR LOWER(column_name) LIKE '%client_code%'
+                )
+            `, [table]);
+            
+            if (columnsResult.rows.length > 0) {
+                tablesWithClientData.push({
+                    tableName: table,
+                    clientColumns: columnsResult.rows.map(row => row.column_name)
+                });
+            }
+        }
+        
+        await pgPool.end();
+        
+        res.json({
+            success: true,
+            tables: tablesWithClientData
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting client tables:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get client tables',
+            details: error.message
+        });
+    }
+});
+
+// Get detailed table information for exploration
+app.get('/api/postgresql/table-details/:tableName', async (req, res) => {
+    try {
+        const { tableName } = req.params;
+        const pgPool = new Pool(config.postgresql);
+        
+        // Get column information
+        const columnsResult = await pgPool.query(`
+            SELECT 
+                column_name,
+                data_type,
+                is_nullable,
+                column_default
+            FROM information_schema.columns 
+            WHERE table_name = $1 
+            AND table_schema = 'public'
+            ORDER BY ordinal_position
+        `, [tableName]);
+        
+        // Get sample data (first 5 rows)
+        const sampleResult = await pgPool.query(`
+            SELECT * FROM "${tableName}" LIMIT 5
+        `);
+        
+        // Get total record count
+        const countResult = await pgPool.query(`
+            SELECT COUNT(*) as total FROM "${tableName}"
+        `);
+        
+        await pgPool.end();
+        
+        res.json({
+            success: true,
+            tableName: tableName,
+            columns: columnsResult.rows,
+            sampleData: sampleResult.rows,
+            totalRecords: parseInt(countResult.rows[0].total),
+            hasClientData: columnsResult.rows.some(col => 
+                col.column_name.toLowerCase().includes('client') ||
+                col.column_name.toLowerCase().includes('client_id') ||
+                col.column_name.toLowerCase().includes('clientid') ||
+                col.column_name.toLowerCase().includes('client_code')
+            )
+        });
+        
+    } catch (error) {
+        console.error('❌ Error getting table details:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to get table details',
+            details: error.message
+        });
+    }
+});
+
+// Custom query endpoint for selective data extraction
+app.post('/api/postgresql/custom-query', async (req, res) => {
+    try {
+        const { clientId, tableQueries } = req.body;
+        
+        if (!clientId || !tableQueries || !Array.isArray(tableQueries)) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameters: clientId and tableQueries array'
+            });
+        }
+        
+        console.log(`🔍 Custom query for Client ID: ${clientId}`);
+        
+        const pgPool = new Pool(config.postgresql);
+        const results = {};
+        
+        for (const tableQuery of tableQueries) {
+            const { tableName, selectedFields, clientColumn } = tableQuery;
+            
+            if (!tableName || !selectedFields || !clientColumn) {
+                continue;
+            }
+            
+            try {
+                // Build the SELECT clause
+                const selectClause = selectedFields.map(field => `"${field}"`).join(', ');
+                
+                // Build the query
+                const query = `
+                    SELECT ${selectClause}
+                    FROM "${tableName}"
+                    WHERE "${clientColumn}" = $1
+                    ORDER BY 1
+                    LIMIT 100
+                `;
+                
+                const dataResult = await pgPool.query(query, [clientId]);
+                
+                if (dataResult.rows.length > 0) {
+                    results[tableName] = {
+                        columns: selectedFields,
+                        data: dataResult.rows,
+                        count: dataResult.rows.length,
+                        query: query
+                    };
+                    console.log(`✅ Found ${dataResult.rows.length} records in table: ${tableName}`);
+                }
+                
+            } catch (tableError) {
+                console.log(`⚠️ Error querying table ${tableName}:`, tableError.message);
+                results[tableName] = {
+                    error: tableError.message
+                };
+            }
+        }
+        
+        await pgPool.end();
+        
+        const totalRecords = Object.values(results)
+            .filter(result => !result.error)
+            .reduce((sum, result) => sum + result.count, 0);
+        
+        res.json({
+            success: true,
+            clientId: clientId,
+            totalRecords: totalRecords,
+            tablesQueried: Object.keys(results),
+            results: results
+        });
+        
+    } catch (error) {
+        console.error('❌ Error executing custom query:', error);
+        res.status(500).json({
+            success: false,
+            error: 'Failed to execute custom query',
             details: error.message
         });
     }

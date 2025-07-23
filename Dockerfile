@@ -24,9 +24,6 @@ COPY . .
 # Create temp uploads directory
 RUN mkdir -p temp_uploads
 
-# Set proper permissions
-RUN chmod +x working-upload-system.js
-
 # Expose port
 EXPOSE 3000
 

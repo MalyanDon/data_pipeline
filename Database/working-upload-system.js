@@ -60,6 +60,7 @@ const DATA_CATEGORIES = {
     mf_allocations: { displayName: 'MF Allocations', subcategories: ['mf_allocations'], icon: '📈', hasSubcategories: false },
     strategy_master: { displayName: 'Strategy Master', subcategories: ['strategy_master'], icon: '🎯', hasSubcategories: false },
     client_info: { displayName: 'Client Info', subcategories: ['client_info'], icon: '👥', hasSubcategories: false },
+    order_file: { displayName: 'Order File', subcategories: ['order_file'], icon: '📄', hasSubcategories: false },
     trades: { displayName: 'Trades', subcategories: ['trades'], icon: '💹', hasSubcategories: false }
 };
 
@@ -611,10 +612,12 @@ app.get('/', (req, res) => {
             .btn:disabled { background: #6c757d; cursor: not-allowed; }
             .btn.danger { background: #dc3545; }
             .btn.danger:hover { background: #c82333; }
-            .table-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin: 20px 0; }
+            .table-grid { margin: 20px 0; }
             .table-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; }
-            .table-card:hover { background: #e9ecef; }
-            .table-card.selected { background: #e3f2fd; border-color: #667eea; }
+            .table-card:hover { background: #e9ecef; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+            .table-card.selected { background: #e3f2fd; border-color: #667eea; box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3); }
+            .category-section { margin-bottom: 25px; }
+            .category-tables { transition: all 0.3s ease; overflow: hidden; }
             .mapping-section { margin: 20px 0; }
             .column-mapping { background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 10px 0; }
             .form-group { margin: 15px 0; }
@@ -699,6 +702,17 @@ app.get('/', (req, res) => {
                         <input type="text" id="targetTableName" placeholder="e.g., unified_custody_master">
                     </div>
                     
+                    <!-- Saved Strategies Dashboard -->
+                    <div style="background: #f8f9fa; border-radius: 10px; padding: 20px; margin: 20px 0; border: 1px solid #e9ecef;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0; color: #495057;">💾 Saved Mapping Strategies</h3>
+                            <button class="btn" onclick="refreshStrategiesDashboard()" style="padding: 8px 12px; font-size: 12px;">🔄 Refresh</button>
+                        </div>
+                        <div id="strategiesDashboard">
+                            <!-- Saved strategies will be displayed here -->
+                        </div>
+                    </div>
+                    
                     <h3>📊 Available MongoDB Tables</h3>
                     <button class="btn" onclick="loadAvailableTables()">🔄 Refresh Tables</button>
                     
@@ -708,6 +722,32 @@ app.get('/', (req, res) => {
                     
                     <div id="mappingSection" class="mapping-section hidden">
                         <h3>🎯 Column Mapping</h3>
+                        
+                        <!-- Strategy Management Section -->
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 15px 0; border: 1px solid #dee2e6;">
+                            <h4 style="margin: 0 0 15px 0; color: #495057;">📋 Mapping Strategies</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 10px; align-items: end;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #6c757d;">Strategy Name:</label>
+                                    <input type="text" id="strategyName" placeholder="e.g., Custody Master Mapping v1" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #6c757d;">Load Existing Strategy:</label>
+                                    <select id="existingStrategies" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px;" onchange="loadStrategy()">
+                                        <option value="">-- Select Strategy --</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 5px; font-size: 12px; color: #6c757d;">Quick Actions:</label>
+                                    <button class="btn" onclick="saveStrategy()" style="padding: 8px 12px; font-size: 12px; margin-right: 5px;">💾 Save Strategy</button>
+                                </div>
+                                <div>
+                                    <button class="btn danger" onclick="clearMapping()" style="padding: 8px 12px; font-size: 12px;">🗑️ Clear All</button>
+                                </div>
+                            </div>
+                            <div id="strategyStatus" style="margin-top: 10px;"></div>
+                        </div>
+                        
                         <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #667eea;">
                             <p><strong>💡 Mapping Options:</strong></p>
                             <ul style="margin: 10px 0; padding-left: 20px;">
@@ -748,6 +788,8 @@ app.get('/', (req, res) => {
             let availableTablesData = {};
             let selectedTables = [];
             let columnMappings = {};
+            let availableCategories = {};
+            let savedStrategies = {};
             
             console.log('🔥 Complete ETL System initialized');
             
@@ -1018,12 +1060,20 @@ app.get('/', (req, res) => {
                 try {
                     showStatus('mappingStatus', 'Loading available tables...', 'info');
                     
+                    // Load categories first
+                    const categoriesResponse = await fetch('/api/upload/categories');
+                    const categoriesData = await categoriesResponse.json();
+                    if (categoriesData.success) {
+                        availableCategories = categoriesData.categories;
+                    }
+                    
                     const response = await fetch('/api/mapping/available-tables');
                     const data = await response.json();
                     
                     if (data.success) {
                         availableTablesData = data.availableTables;
                         renderAvailableTables(data.availableTables);
+                        loadAvailableStrategies(); // Load strategies when tables are loaded
                         showStatus('mappingStatus', \`✅ Loaded \${data.count} available tables\`, 'success');
                     } else {
                         showStatus('mappingStatus', \`❌ Error loading tables: \${data.error}\`, 'error');
@@ -1042,25 +1092,63 @@ app.get('/', (req, res) => {
                     return;
                 }
                 
+                // Group tables by category
+                const groupedTables = {};
                 Object.entries(tables).forEach(([id, table]) => {
-                    const card = document.createElement('div');
-                    card.className = 'table-card';
-                    card.onclick = () => toggleTableSelection(id, card);
+                    if (!groupedTables[table.category]) {
+                        groupedTables[table.category] = [];
+                    }
+                    groupedTables[table.category].push({ id, ...table });
+                });
+                
+                // Render categories
+                Object.entries(groupedTables).forEach(([category, categoryTables]) => {
+                    const categoryData = availableCategories[category];
+                    const categorySection = document.createElement('div');
+                    categorySection.className = 'category-section';
+                    categorySection.style.marginBottom = '30px';
                     
-                    card.innerHTML = \`
-                        <h4>\${table.icon} \${table.displayName}</h4>
-                        <p><strong>Records:</strong> \${table.recordCount}</p>
-                        <p><strong>Date:</strong> \${table.date}</p>
-                        <p><strong>File:</strong> \${table.fileName}</p>
-                        <p><strong>Columns:</strong> \${table.columns.length}</p>
-                        <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                            <strong>Available Columns:</strong><br>
-                            \${table.columns.slice(0, 5).join(', ')}\${table.columns.length > 5 ? '...' : ''}
+                    categorySection.innerHTML = \`
+                        <div style="display: flex; align-items: center; margin-bottom: 15px; padding: 10px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px; cursor: pointer;" onclick="toggleCategorySection('\${category}')">
+                            <span style="font-size: 24px; margin-right: 10px;">\${categoryData?.icon || '📄'}</span>
+                            <h3 style="margin: 0; flex: 1;">\${categoryData?.displayName || category}</h3>
+                            <span style="background: rgba(255,255,255,0.2); padding: 2px 8px; border-radius: 12px; font-size: 12px;">\${categoryTables.length} tables</span>
+                            <span id="toggle-\${category}" style="margin-left: 10px; font-size: 18px;">▼</span>
+                        </div>
+                        <div id="category-\${category}" class="category-tables" style="display: block;">
+                            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 15px;">
+                                \${categoryTables.map(table => \`
+                                    <div class="table-card" onclick="toggleTableSelection('\${table.id}', this)" style="border: 1px solid #ddd; border-radius: 8px; padding: 15px; cursor: pointer; transition: all 0.3s; background: white;">
+                                        <h4 style="margin: 0 0 10px 0; color: #333;">\${table.icon} \${table.displayName}</h4>
+                                        <p style="margin: 5px 0; color: #666;"><strong>Records:</strong> \${table.recordCount}</p>
+                                        <p style="margin: 5px 0; color: #666;"><strong>Date:</strong> \${table.date}</p>
+                                        <p style="margin: 5px 0; color: #666; font-size: 12px;"><strong>File:</strong> \${table.fileName}</p>
+                                        <p style="margin: 5px 0; color: #666;"><strong>Columns:</strong> \${table.columns.length}</p>
+                                        <div style="margin-top: 10px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 8px;">
+                                            <strong>Available Columns:</strong><br>
+                                            \${table.columns.slice(0, 4).join(', ')}\${table.columns.length > 4 ? ', ...' : ''}
+                                        </div>
+                                    </div>
+                                \`).join('')}
+                            </div>
                         </div>
                     \`;
                     
-                    container.appendChild(card);
+                    container.appendChild(categorySection);
                 });
+            }
+            
+            function toggleCategorySection(category) {
+                const section = document.getElementById(\`category-\${category}\`);
+                const toggle = document.getElementById(\`toggle-\${category}\`);
+                
+                if (section.style.display === 'none') {
+                    section.style.display = 'block';
+                    toggle.textContent = '▼';
+                } else {
+                    section.style.display = 'none';
+                    toggle.textContent = '▶';
+                }
             }
             
             function toggleTableSelection(tableId, cardElement) {
@@ -1172,6 +1260,359 @@ app.get('/', (req, res) => {
                     delete columnMappings[targetColumn];
                     updateColumnMappings();
                 }
+            }
+            
+            // Strategy Management Functions
+            async function saveStrategy() {
+                const strategyName = document.getElementById('strategyName').value.trim();
+                
+                if (!strategyName) {
+                    showStatus('strategyStatus', 'Please enter a strategy name', 'error');
+                    return;
+                }
+                
+                if (selectedTables.length === 0) {
+                    showStatus('strategyStatus', 'Please select tables before saving strategy', 'error');
+                    return;
+                }
+                
+                if (Object.keys(columnMappings).length === 0) {
+                    showStatus('strategyStatus', 'Please create column mappings before saving strategy', 'error');
+                    return;
+                }
+                
+                const strategyData = {
+                    name: strategyName,
+                    selectedTables: [...selectedTables],
+                    columnMappings: JSON.parse(JSON.stringify(columnMappings)),
+                    tableData: {},
+                    createdAt: new Date().toISOString(),
+                    description: \`Strategy with \${selectedTables.length} tables and \${Object.keys(columnMappings).length} column mappings\`
+                };
+                
+                // Store table metadata for the strategy
+                selectedTables.forEach(tableId => {
+                    if (availableTablesData[tableId]) {
+                        strategyData.tableData[tableId] = {
+                            displayName: availableTablesData[tableId].displayName,
+                            columns: availableTablesData[tableId].columns
+                        };
+                    }
+                });
+                
+                try {
+                    const response = await fetch('/api/mapping/save-strategy', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(strategyData)
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        savedStrategies[strategyName] = strategyData;
+                        updateStrategyDropdown();
+                        showStatus('strategyStatus', \`✅ Strategy "\${strategyName}" saved successfully!\`, 'success');
+                        document.getElementById('strategyName').value = '';
+                    } else {
+                        showStatus('strategyStatus', \`❌ Failed to save strategy: \${result.error}\`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('strategyStatus', \`❌ Error saving strategy: \${error.message}\`, 'error');
+                }
+            }
+            
+            async function loadStrategy() {
+                const strategyName = document.getElementById('existingStrategies').value;
+                
+                if (!strategyName) return;
+                
+                try {
+                    const response = await fetch(\`/api/mapping/load-strategy/\${encodeURIComponent(strategyName)}\`);
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        const strategy = result.strategy;
+                        
+                        // Clear current selections
+                        clearMapping();
+                        
+                        // Load column mappings
+                        columnMappings = JSON.parse(JSON.stringify(strategy.columnMappings));
+                        
+                        // Try to select the same tables if they exist
+                        const availableTableIds = Object.keys(availableTablesData);
+                        const strategyTableIds = strategy.selectedTables;
+                        
+                        selectedTables = strategyTableIds.filter(tableId => 
+                            availableTableIds.includes(tableId)
+                        );
+                        
+                        // Update table selection UI
+                        document.querySelectorAll('.table-card').forEach(card => {
+                            card.classList.remove('selected');
+                        });
+                        
+                        selectedTables.forEach(tableId => {
+                            const tableElement = document.querySelector(\`[onclick*="'\${tableId}'"]\`);
+                            if (tableElement) {
+                                tableElement.classList.add('selected');
+                            }
+                        });
+                        
+                        // Show mapping section and update mappings
+                        document.getElementById('mappingSection').classList.remove('hidden');
+                        updateColumnMappings();
+                        
+                        // Show status
+                        const missingTables = strategyTableIds.filter(tableId => 
+                            !availableTableIds.includes(tableId)
+                        );
+                        
+                        let statusMessage = \`✅ Strategy "\${strategyName}" loaded with \${selectedTables.length} tables and \${Object.keys(columnMappings).length} column mappings\`;
+                        
+                        if (missingTables.length > 0) {
+                            statusMessage += \`\n⚠️ \${missingTables.length} tables from the strategy are not currently available\`;
+                        }
+                        
+                        showStatus('strategyStatus', statusMessage, missingTables.length > 0 ? 'info' : 'success');
+                        
+                    } else {
+                        showStatus('strategyStatus', \`❌ Failed to load strategy: \${result.error}\`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('strategyStatus', \`❌ Error loading strategy: \${error.message}\`, 'error');
+                }
+            }
+            
+            async function loadAvailableStrategies() {
+                try {
+                    const response = await fetch('/api/mapping/strategies');
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        savedStrategies = result.strategies;
+                        updateStrategyDropdown();
+                    }
+                } catch (error) {
+                    console.error('Error loading strategies:', error);
+                }
+            }
+            
+            function updateStrategyDropdown() {
+                const dropdown = document.getElementById('existingStrategies');
+                dropdown.innerHTML = '<option value="">-- Select Strategy --</option>';
+                
+                Object.entries(savedStrategies).forEach(([name, strategy]) => {
+                    const option = document.createElement('option');
+                    option.value = name;
+                    option.textContent = \`\${name} (\${Object.keys(strategy.columnMappings).length} mappings)\`;
+                    dropdown.appendChild(option);
+                });
+                
+                // Also update the dashboard
+                renderStrategiesDashboard();
+            }
+            
+            function renderStrategiesDashboard() {
+                const container = document.getElementById('strategiesDashboard');
+                
+                if (Object.keys(savedStrategies).length === 0) {
+                    container.innerHTML = \`
+                        <div style="text-align: center; padding: 30px; color: #6c757d;">
+                            <h4>📝 No strategies saved yet</h4>
+                            <p>Create your first mapping strategy by selecting tables, adding column mappings, and clicking "💾 Save Strategy"</p>
+                        </div>
+                    \`;
+                    return;
+                }
+                
+                const strategiesHTML = Object.entries(savedStrategies).map(([name, strategy]) => {
+                    const createdDate = new Date(strategy.createdAt).toLocaleDateString();
+                    const updatedDate = strategy.updatedAt ? new Date(strategy.updatedAt).toLocaleDateString() : createdDate;
+                    
+                    return \`
+                        <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 10px;">
+                                <div style="flex: 1;">
+                                    <h4 style="margin: 0 0 5px 0; color: #495057; font-size: 16px;">📋 \${name}</h4>
+                                    <p style="margin: 0; color: #6c757d; font-size: 12px;">\${strategy.description || 'No description'}</p>
+                                </div>
+                                <div style="display: flex; gap: 5px;">
+                                    <button class="btn" onclick="loadStrategyFromDashboard('\${name}')" style="padding: 4px 8px; font-size: 11px; background: #28a745;">📤 Load</button>
+                                    <button class="btn" onclick="viewStrategyDetails('\${name}')" style="padding: 4px 8px; font-size: 11px; background: #17a2b8;">👁️ View</button>
+                                    <button class="btn danger" onclick="deleteStrategy('\${name}')" style="padding: 4px 8px; font-size: 11px;">🗑️ Delete</button>
+                                </div>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 12px; color: #495057;">
+                                <div>
+                                    <strong>📊 Tables:</strong> \${strategy.selectedTables.length}
+                                    <div style="color: #6c757d; font-size: 10px;">
+                                        \${strategy.selectedTables.map(tableId => {
+                                            const tableData = strategy.tableData[tableId];
+                                            return tableData ? tableData.displayName : tableId;
+                                        }).slice(0, 2).join(', ')}\${strategy.selectedTables.length > 2 ? '...' : ''}
+                                    </div>
+                                </div>
+                                <div>
+                                    <strong>🎯 Mappings:</strong> \${Object.keys(strategy.columnMappings).length}
+                                    <div style="color: #6c757d; font-size: 10px;">
+                                        \${Object.keys(strategy.columnMappings).slice(0, 2).join(', ')}\${Object.keys(strategy.columnMappings).length > 2 ? '...' : ''}
+                                    </div>
+                                </div>
+                                <div>
+                                    <strong>📅 Created:</strong> \${createdDate}
+                                    \${updatedDate !== createdDate ? \`<div style="color: #6c757d; font-size: 10px;">Updated: \${updatedDate}</div>\` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    \`;
+                }).join('');
+                
+                container.innerHTML = strategiesHTML;
+            }
+            
+            function loadStrategyFromDashboard(strategyName) {
+                document.getElementById('existingStrategies').value = strategyName;
+                loadStrategy();
+            }
+            
+            function viewStrategyDetails(strategyName) {
+                const strategy = savedStrategies[strategyName];
+                if (!strategy) return;
+                
+                let detailsHTML = \`
+                    <div style="max-width: 800px; max-height: 600px; overflow-y: auto;">
+                        <h3>📋 Strategy Details: \${strategyName}</h3>
+                        
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                            <h4>📊 Selected Tables (\${strategy.selectedTables.length})</h4>
+                            <ul style="margin: 10px 0; padding-left: 20px;">
+                                \${strategy.selectedTables.map(tableId => {
+                                    const tableData = strategy.tableData[tableId];
+                                    return \`<li><strong>\${tableData ? tableData.displayName : tableId}</strong> (\${tableData ? tableData.columns.length : 'Unknown'} columns)</li>\`;
+                                }).join('')}
+                            </ul>
+                        </div>
+                        
+                        <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                            <h4>🎯 Column Mappings (\${Object.keys(strategy.columnMappings).length})</h4>
+                            <div style="overflow-x: auto;">
+                                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                                    <thead>
+                                        <tr style="background: #f0f0f0;">
+                                            <th style="border: 1px solid #ddd; padding: 8px; text-align: left;">Target Column</th>
+                                            \${strategy.selectedTables.map(tableId => {
+                                                const tableData = strategy.tableData[tableId];
+                                                return \`<th style="border: 1px solid #ddd; padding: 8px; text-align: left;">\${tableData ? tableData.displayName : tableId}</th>\`;
+                                            }).join('')}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        \${Object.entries(strategy.columnMappings).map(([targetCol, mappings]) => \`
+                                            <tr>
+                                                <td style="border: 1px solid #ddd; padding: 8px; font-weight: bold; background: #f8f9fa;">\${targetCol}</td>
+                                                \${strategy.selectedTables.map(tableId => {
+                                                    const mapping = mappings[tableId] || '';
+                                                    let cellStyle = 'border: 1px solid #ddd; padding: 8px;';
+                                                    if (mapping === 'N/A') cellStyle += ' background: #ffe6e6; color: #d63384;';
+                                                    else if (mapping === 'NULL') cellStyle += ' background: #f0f0f0; color: #6c757d;';
+                                                    else if (mapping) cellStyle += ' background: #d4edda; color: #155724;';
+                                                    return \`<td style="\${cellStyle}">\${mapping || '—'}</td>\`;
+                                                }).join('')}
+                                            </tr>
+                                        \`).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        
+                        <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+                            <h4>ℹ️ Strategy Info</h4>
+                            <p><strong>Created:</strong> \${new Date(strategy.createdAt).toLocaleString()}</p>
+                            \${strategy.updatedAt ? \`<p><strong>Last Updated:</strong> \${new Date(strategy.updatedAt).toLocaleString()}</p>\` : ''}
+                            <p><strong>Description:</strong> \${strategy.description || 'No description provided'}</p>
+                        </div>
+                    </div>
+                \`;
+                
+                // Create a modal-like popup
+                const popup = document.createElement('div');
+                popup.style.cssText = \`
+                    position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                    background: rgba(0,0,0,0.5); z-index: 1000; display: flex; 
+                    justify-content: center; align-items: center; padding: 20px;
+                \`;
+                
+                const content = document.createElement('div');
+                content.style.cssText = \`
+                    background: white; border-radius: 10px; padding: 20px; 
+                    position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                \`;
+                
+                content.innerHTML = detailsHTML + \`
+                    <button onclick="this.closest('[style*=position]').remove()" 
+                            style="position: absolute; top: 10px; right: 15px; background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer;">
+                        ✕ Close
+                    </button>
+                \`;
+                
+                popup.appendChild(content);
+                document.body.appendChild(popup);
+                
+                // Close on background click
+                popup.addEventListener('click', function(e) {
+                    if (e.target === popup) popup.remove();
+                });
+            }
+            
+            async function deleteStrategy(strategyName) {
+                if (!confirm(\`Are you sure you want to delete strategy "\${strategyName}"?\\n\\nThis action cannot be undone.\`)) {
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(\`/api/mapping/strategy/\${encodeURIComponent(strategyName)}\`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        delete savedStrategies[strategyName];
+                        updateStrategyDropdown();
+                        showStatus('strategyStatus', \`✅ Strategy "\${strategyName}" deleted successfully\`, 'success');
+                    } else {
+                        showStatus('strategyStatus', \`❌ Failed to delete strategy: \${result.error}\`, 'error');
+                    }
+                } catch (error) {
+                    showStatus('strategyStatus', \`❌ Error deleting strategy: \${error.message}\`, 'error');
+                }
+            }
+            
+            async function refreshStrategiesDashboard() {
+                await loadAvailableStrategies();
+                renderStrategiesDashboard();
+            }
+            
+            function clearMapping() {
+                // Clear selections
+                selectedTables = [];
+                columnMappings = {};
+                
+                // Clear UI
+                document.querySelectorAll('.table-card').forEach(card => {
+                    card.classList.remove('selected');
+                });
+                
+                document.getElementById('mappingSection').classList.add('hidden');
+                document.getElementById('strategyName').value = '';
+                document.getElementById('existingStrategies').value = '';
+                
+                showStatus('strategyStatus', '🗑️ All mappings cleared', 'info');
             }
             
             async function processMapping() {
@@ -1395,7 +1836,7 @@ app.get('/', (req, res) => {
                         </table>
                     </div>
                     <p style="margin-top: 10px; color: #666; font-size: 12px;">
-                        Showing first 50 records of \${data.length} total records
+                        Showing first 50 records of ' + data.length + ' total records
                     </p>
                 \`;
                 
@@ -1969,6 +2410,160 @@ app.get('/api/postgresql/table-data/:tableName', async (req, res) => {
     } catch (error) {
         console.error('Error getting PostgreSQL table data:', error);
         res.status(500).json({ success: false, error: 'Failed to get table data', details: error.message });
+    }
+});
+
+// Strategy Management API Routes
+app.post('/api/mapping/save-strategy', async (req, res) => {
+    try {
+        const strategy = req.body;
+        
+        if (!strategy.name || !strategy.selectedTables || !strategy.columnMappings) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Missing required strategy data' 
+            });
+        }
+        
+        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        // Save strategy to MongoDB
+        const result = await db.collection('mapping_strategies').replaceOne(
+            { name: strategy.name },
+            { 
+                ...strategy, 
+                updatedAt: new Date().toISOString() 
+            },
+            { upsert: true }
+        );
+        
+        await client.close();
+        
+        console.log(`💾 Strategy "${strategy.name}" saved successfully`);
+        
+        res.json({
+            success: true,
+            message: `Strategy "${strategy.name}" saved successfully`,
+            strategyId: result.upsertedId
+        });
+        
+    } catch (error) {
+        console.error('Error saving strategy:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to save strategy',
+            details: error.message 
+        });
+    }
+});
+
+app.get('/api/mapping/strategies', async (req, res) => {
+    try {
+        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        const strategies = await db.collection('mapping_strategies')
+            .find({})
+            .sort({ updatedAt: -1 })
+            .toArray();
+        
+        await client.close();
+        
+        // Convert to object format expected by frontend
+        const strategiesObject = {};
+        strategies.forEach(strategy => {
+            strategiesObject[strategy.name] = strategy;
+        });
+        
+        res.json({
+            success: true,
+            strategies: strategiesObject
+        });
+        
+    } catch (error) {
+        console.error('Error loading strategies:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to load strategies',
+            details: error.message 
+        });
+    }
+});
+
+app.get('/api/mapping/load-strategy/:strategyName', async (req, res) => {
+    try {
+        const { strategyName } = req.params;
+        
+        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        const strategy = await db.collection('mapping_strategies')
+            .findOne({ name: decodeURIComponent(strategyName) });
+        
+        await client.close();
+        
+        if (!strategy) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Strategy "${strategyName}" not found` 
+            });
+        }
+        
+        console.log(`📋 Strategy "${strategyName}" loaded successfully`);
+        
+        res.json({
+            success: true,
+            strategy: strategy
+        });
+        
+    } catch (error) {
+        console.error('Error loading strategy:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to load strategy',
+            details: error.message 
+        });
+    }
+});
+
+app.delete('/api/mapping/strategy/:strategyName', async (req, res) => {
+    try {
+        const { strategyName } = req.params;
+        
+        const client = new MongoClient(mongoUri, { maxPoolSize: 10, serverSelectionTimeoutMS: 5000 });
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        const result = await db.collection('mapping_strategies')
+            .deleteOne({ name: decodeURIComponent(strategyName) });
+        
+        await client.close();
+        
+        if (result.deletedCount === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                error: `Strategy "${strategyName}" not found` 
+            });
+        }
+        
+        console.log(`🗑️ Strategy "${strategyName}" deleted successfully`);
+        
+        res.json({
+            success: true,
+            message: `Strategy "${strategyName}" deleted successfully`
+        });
+        
+    } catch (error) {
+        console.error('Error deleting strategy:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: 'Failed to delete strategy',
+            details: error.message 
+        });
     }
 });
 

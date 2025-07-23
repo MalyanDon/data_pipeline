@@ -44,5 +44,5 @@ RUN echo "📁 Files in /app:" && ls -la
 # Application runs on port 3000
 EXPOSE 3000
 
-# Start the ETL data pipeline
-CMD ["./start.sh"] 
+# Start the ETL data pipeline using npm start
+CMD ["npm", "start"] 

@@ -1,0 +1,42 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache python3 py3-pip make g++ postgresql-client
+
+# Copy package files first
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --production
+
+# Copy the main file FIRST and verify it
+COPY working-upload-system.js ./
+RUN echo "=== VERIFYING MAIN FILE ===" && \
+    ls -la working-upload-system.js && \
+    echo "File size: $(wc -c < working-upload-system.js) bytes" && \
+    echo "First line: $(head -1 working-upload-system.js)"
+
+# Copy all other files
+COPY . .
+
+# Create upload directory
+RUN mkdir -p temp_uploads
+
+# Final verification - show all files
+RUN echo "=== FINAL VERIFICATION ===" && \
+    echo "All files in /app:" && \
+    ls -la && \
+    echo "" && \
+    echo "JavaScript files:" && \
+    ls -la *.js && \
+    echo "" && \
+    echo "Package.json start script:" && \
+    grep -A 1 -B 1 "start" package.json
+
+# Expose port
+EXPOSE 3000
+
+# Start with npm start
+CMD ["npm", "start"] 

@@ -2,10 +2,10 @@
   "name": "mongodb-database-project",
   "version": "1.0.0",
   "description": "MongoDB categorized daily data dashboard",
-  "main": "working-upload-system.js",
+  "main": "app.js",
   "scripts": {
-    "start": "node working-upload-system.js",
-    "dev": "nodemon working-upload-system.js"
+    "start": "node app.js",
+    "dev": "nodemon app.js"
   },
   "dependencies": {
     "csv-parse": "^5.6.0",

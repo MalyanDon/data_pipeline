@@ -4,7 +4,7 @@ services:
     env: docker
     plan: starter
     rootDir: Database
-    dockerfilePath: Dockerfile.final
+    dockerfilePath: Dockerfile.ultimate
     envVars:
       - key: NODE_ENV
         value: production

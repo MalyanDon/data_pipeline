@@ -1,0 +1,67 @@
+# ===================================================
+# ULTIMATE DOCKERFILE - FORCE CLEAN BUILD
+# ===================================================
+
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apk add --no-cache python3 py3-pip make g++ postgresql-client
+
+# Debug: Show what we have initially
+RUN echo "=== INITIAL STATE ===" && pwd && ls -la
+
+# Copy package files
+COPY package*.json ./
+
+# Debug: Show package files
+RUN echo "=== PACKAGE FILES ===" && ls -la package*.json
+
+# Install dependencies
+RUN npm install --production
+
+# Debug: Show after npm install
+RUN echo "=== AFTER NPM INSTALL ===" && ls -la
+
+# CRITICAL: Copy the main file EXPLICITLY and verify
+COPY working-upload-system.js ./
+
+# Debug: Verify main file was copied
+RUN echo "=== MAIN FILE VERIFICATION ===" && \
+    if [ -f "working-upload-system.js" ]; then \
+        echo "✅ working-upload-system.js EXISTS!" && \
+        echo "📏 Size: $(wc -c < working-upload-system.js) bytes" && \
+        echo "📄 First 3 lines:" && head -3 working-upload-system.js && \
+        echo "🔍 File permissions:" && ls -la working-upload-system.js; \
+    else \
+        echo "❌ working-upload-system.js MISSING!" && \
+        echo "📁 Available files:" && ls -la && \
+        echo "📁 Available .js files:" && ls -la *.js 2>/dev/null || echo "No .js files found"; \
+    fi
+
+# Copy all other files
+COPY . .
+
+# Debug: Final state
+RUN echo "=== FINAL STATE ===" && \
+    echo "📁 All files in /app:" && ls -la && \
+    echo "" && \
+    echo "📁 JavaScript files:" && ls -la *.js && \
+    echo "" && \
+    echo "📦 Package.json start script:" && \
+    if [ -f "package.json" ]; then \
+        grep -A 2 -B 2 "start" package.json; \
+    else \
+        echo "❌ package.json not found!"; \
+    fi
+
+# Create upload directory
+RUN mkdir -p temp_uploads
+
+# Expose port
+EXPOSE 3000
+
+# Start command with explicit verification
+CMD ["sh", "-c", "echo '🚀 Starting application...' && echo '📁 Current directory:' && pwd && echo '📁 Files:' && ls -la && echo '📄 Main file:' && ls -la working-upload-system.js && echo '🔧 Starting npm start...' && npm start"] 

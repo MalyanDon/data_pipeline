@@ -1,0 +1,33 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache python3 py3-pip make g++ postgresql-client
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install --production
+
+# Copy all files
+COPY . .
+
+# Create upload directory
+RUN mkdir -p temp_uploads
+
+# FORCE VERIFICATION - Show everything
+RUN echo "=== FORCE VERIFICATION ===" && \
+    echo "📁 Current directory:" && pwd && \
+    echo "📁 All files:" && ls -la && \
+    echo "📁 JavaScript files:" && ls -la *.js && \
+    echo "📦 Package.json content:" && cat package.json && \
+    echo "📄 App.js exists:" && ls -la app.js && \
+    echo "📄 Working-upload-system.js check:" && ls -la working-upload-system.js 2>/dev/null || echo "✅ working-upload-system.js NOT FOUND (GOOD!)"
+
+# Expose port
+EXPOSE 3000
+
+# FORCE: Use explicit start command with absolute path
+CMD ["node", "/app/app.js"] 

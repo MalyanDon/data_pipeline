@@ -5,7 +5,8 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "dev": "nodemon app.js"
+    "dev": "nodemon app.js",
+    "start-explicit": "node /app/app.js"
   },
   "dependencies": {
     "csv-parse": "^5.6.0",

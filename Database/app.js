@@ -80,6 +80,55 @@ app.get('/api/test', (req, res) => {
     });
 });
 
+// Debug endpoint to check uploaded data
+app.get('/api/debug/latest-upload/:category/:subcategory', async (req, res) => {
+    try {
+        const { category, subcategory } = req.params;
+        const client = new MongoClient(mongoUri);
+        await client.connect();
+        const db = client.db('financial_data_2025');
+        
+        // Get the latest collection for this category/subcategory
+        const tracker = await db.collection('file_versions_tracker')
+            .findOne({ category, subcategory });
+            
+        if (!tracker) {
+            return res.json({
+                success: false,
+                error: 'No data found for this category/subcategory'
+            });
+        }
+        
+        // Get sample data from the latest collection
+        const sampleData = await db.collection(tracker.latestCollection)
+            .find({})
+            .limit(5)
+            .toArray();
+            
+        await client.close();
+        
+        res.json({
+            success: true,
+            tracker: {
+                category: tracker.category,
+                subcategory: tracker.subcategory,
+                fileName: tracker.fileName,
+                recordCount: tracker.recordCount,
+                latestCollection: tracker.latestCollection,
+                latestDate: tracker.latestDate
+            },
+            sampleData: sampleData
+        });
+        
+    } catch (error) {
+        console.error('Debug error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 const mongoUri = config.mongodb.uri + config.mongodb.database;
 
 const DATA_CATEGORIES = {

@@ -619,6 +619,17 @@ app.get('/', (req, res) => {
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+            .deployment-indicator { 
+                position: fixed; 
+                top: 10px; 
+                right: 10px; 
+                background: #ff6b6b; 
+                color: white; 
+                padding: 10px; 
+                border-radius: 5px; 
+                z-index: 1000; 
+                font-weight: bold; 
+            }
             .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
             .header { text-align: center; color: white; margin-bottom: 30px; }
             .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
@@ -667,10 +678,11 @@ app.get('/', (req, res) => {
         </style>
     </head>
     <body>
+        <div class="deployment-indicator">FRONTEND DEPLOYED!</div>
         <div class="container">
             <div class="header">
-                <h1>🔥 Complete ETL System</h1>
-                <p>Upload Files & Create PostgreSQL Tables</p>
+                <h1>🔥 Complete ETL System - UPDATED</h1>
+                <p>Upload Files & Create PostgreSQL Tables - Fresh Deployment</p>
             </div>
             
             <div class="tabs">

@@ -61,7 +61,7 @@ app.use((req, res, next) => {
 app.get('/api/status', (req, res) => {
     res.json({
         status: 'success',
-        message: 'Financial ETL Pipeline API is running',
+        message: 'Financial ETL Pipeline API is running - THIS IS /api/status',
         timestamp: new Date().toISOString(),
         endpoints: {
             health: '/api/health',
@@ -607,6 +607,7 @@ function generateTimestamp() {
 // Main page route - Frontend Dashboard
 app.get('/', (req, res) => {
     console.log('🎯 Frontend route accessed - serving dashboard');
+    console.log('🎯 This should be the frontend HTML, not API JSON');
     res.send(`
     <!DOCTYPE html>
     <html lang="en">

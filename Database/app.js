@@ -11,11 +11,20 @@ const config = require('./config');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Storage configuration
+// Storage configuration for serverless environment
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        const uploadDir = './temp_uploads';
-        if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+        // Use /tmp directory for serverless environments
+        const uploadDir = process.env.NODE_ENV === 'production' ? '/tmp' : './temp_uploads';
+        if (!fs.existsSync(uploadDir)) {
+            try {
+                fs.mkdirSync(uploadDir, { recursive: true });
+            } catch (error) {
+                console.log('Directory creation failed, using /tmp:', error.message);
+                cb(null, '/tmp');
+                return;
+            }
+        }
         cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
@@ -2394,6 +2403,18 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
     let collectionName = null;
     let enhancedData = [];
     
+    // Cleanup function for temporary files
+    const cleanupTempFile = () => {
+        if (tempFilePath && fs.existsSync(tempFilePath)) {
+            try {
+                fs.unlinkSync(tempFilePath);
+                console.log('🧹 Cleaned up temp file:', tempFilePath);
+            } catch (error) {
+                console.log('⚠️ Failed to cleanup temp file:', error.message);
+            }
+        }
+    };
+    
     try {
         const { category, subcategory } = req.params;
         const { processingDate } = req.body;
@@ -2515,20 +2536,21 @@ app.post('/api/upload/:category/:subcategory?', upload.single('file'), async (re
         };
         
         console.log('✅ Upload successful to:', collectionName);
+        cleanupTempFile(); // Cleanup after successful upload
         res.json(response);
         
     } catch (error) {
         console.error('❌ Upload error:', error.message);
-        
-        if (tempFilePath && fs.existsSync(tempFilePath)) {
-            fs.unlinkSync(tempFilePath);
-        }
+        cleanupTempFile();
         
         res.status(500).json({
             success: false,
             error: 'Upload failed',
             details: error.message
         });
+    } finally {
+        // Always cleanup temp files
+        cleanupTempFile();
     }
 });
 

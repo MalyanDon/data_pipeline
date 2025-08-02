@@ -48,8 +48,8 @@ app.use((req, res, next) => {
     if (req.method === 'OPTIONS') { res.sendStatus(200); } else { next(); }
 });
 
-// Root endpoint for health check
-app.get('/', (req, res) => {
+// API health check endpoint
+app.get('/api/status', (req, res) => {
     res.json({
         status: 'success',
         message: 'Financial ETL Pipeline API is running',

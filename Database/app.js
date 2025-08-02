@@ -596,8 +596,9 @@ function generateTimestamp() {
     return new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14); // YYYYMMDDHHmmss
 }
 
-// Main page route
+// Main page route - Frontend Dashboard
 app.get('/', (req, res) => {
+    console.log('🎯 Frontend route accessed - serving dashboard');
     res.send(`
     <!DOCTYPE html>
     <html lang="en">

@@ -72,6 +72,14 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// Test route to verify routing
+app.get('/api/test', (req, res) => {
+    res.json({
+        message: 'API routing is working correctly',
+        timestamp: new Date().toISOString()
+    });
+});
+
 const mongoUri = config.mongodb.uri + config.mongodb.database;
 
 const DATA_CATEGORIES = {

@@ -2,9 +2,9 @@
   "name": "mongodb-database-project",
   "version": "1.0.0",
   "description": "MongoDB categorized daily data dashboard",
-  "main": "ultimate-dashboard.js",
+  "main": "api/index.js",
   "scripts": {
-    "start": "node ultimate-dashboard.js",
+    "start": "node api/index.js",
     "start-all": "node start-all-services.js",
     "dev": "node start-all-services.js",
     "start-upload": "node clean-dashboard.js",

@@ -9,7 +9,7 @@ const path = require('path');
 const config = require('./config');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Storage configuration
 const storage = multer.diskStorage({
@@ -46,6 +46,21 @@ app.use((req, res, next) => {
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
     if (req.method === 'OPTIONS') { res.sendStatus(200); } else { next(); }
+});
+
+// Root endpoint for health check
+app.get('/', (req, res) => {
+    res.json({
+        status: 'success',
+        message: 'Financial ETL Pipeline API is running',
+        timestamp: new Date().toISOString(),
+        endpoints: {
+            health: '/api/health',
+            upload: '/api/upload',
+            categories: '/api/categories',
+            data: '/api/data'
+        }
+    });
 });
 
 const mongoUri = config.mongodb.uri + config.mongodb.database;
@@ -3528,3 +3543,6 @@ app.post('/api/postgresql/custom-query', async (req, res) => {
         });
     }
 });
+
+// Export the app for Vercel
+module.exports = app;
